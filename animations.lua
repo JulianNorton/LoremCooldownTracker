@@ -4,13 +4,13 @@ local addonName, LCT = ...
 LCT.animations = {}
 
 -- Animation settings
-local ANIMATION_DURATION = 0.15
+local ANIMATION_DURATION = 0.1     -- Smooth 100ms transitions
 local FINISH_ANIMATION_DURATION = 0.2
-local FINAL_SECONDS_SCALE = 2.0
+local FINAL_SECONDS_SCALE = 1.0    -- No scaling (was 2.0, caused overlap)
 local FINAL_SECONDS_THRESHOLD = 10
 local MIN_UPDATE_INTERVAL = 0.016  -- ~60 FPS max
 local FPS_THRESHOLD = 30  -- FPS threshold for reduced updates
-local POSITION_THRESHOLD = 0.1  -- Minimum position change to update
+local POSITION_THRESHOLD = 0.5    -- Minimum position change to update (was 0.1)
 local SCALE_THRESHOLD = 0.05   -- Minimum scale change to update
 local ALPHA_THRESHOLD = 0.05   -- Minimum alpha change to update
 

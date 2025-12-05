@@ -182,9 +182,22 @@ function cooldowns.UpdateCooldown(id, isItem)
         -- Calculate the actual position
         local xPos = (remaining / LCT.maxTime) * (width - iconSize) + (iconSize/2)
         
-        -- Update position and show icon
-        icon:ClearAllPoints()
-        icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
+        -- Get current position for animation
+        local _, _, _, currentX = icon:GetPoint()
+        currentX = currentX or 0
+        
+        -- Only animate if position change is significant (>1 pixel)
+        if math.abs(xPos - currentX) > 1 then
+            if LCT.animations and LCT.animations.StartPositionAnimation then
+                -- Use smooth animation for position updates
+                LCT.animations.StartPositionAnimation(icon, xPos, remaining)
+            else
+                -- Fallback: direct position update
+                icon:ClearAllPoints()
+                icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
+            end
+        end
+        
         icon:Show()
         
         -- Update cooldown swipe
