@@ -40,9 +40,10 @@ local function OnUpdateHandler(self, elapsed)
     updateElapsed = updateElapsed + elapsed
     if updateElapsed >= 0.1 then
         local hasActive = false
-        for id, info in pairs(activeCooldownList) do
+        for key, info in pairs(activeCooldownList) do
             hasActive = true
-            cooldowns.UpdateCooldown(id, info.isItem)
+            -- Use info.id (the actual spell/item ID), not key (which is prefixed like "spell_100")
+            cooldowns.UpdateCooldown(info.id, info.isItem)
         end
         updateElapsed = 0
         
@@ -144,7 +145,7 @@ function cooldowns.UpdateCooldown(id, isItem)
     local icon = GetCooldownIcon(id, isItem)
     if not icon then return end
     
-    if start > 0 and duration > 1.5 then -- Only track cooldowns longer than 1.5 seconds
+    if start > 0 and duration > 5 then -- Only track cooldowns longer than five seconds
         local currentTime = GetTime()
         local remaining = (start + duration) - currentTime
         
@@ -182,22 +183,9 @@ function cooldowns.UpdateCooldown(id, isItem)
         -- Calculate the actual position
         local xPos = (remaining / LCT.maxTime) * (width - iconSize) + (iconSize/2)
         
-        -- Get current position for animation
-        local _, _, _, currentX = icon:GetPoint()
-        currentX = currentX or 0
-        
-        -- Only animate if position change is significant (>1 pixel)
-        if math.abs(xPos - currentX) > 1 then
-            if LCT.animations and LCT.animations.StartPositionAnimation then
-                -- Use smooth animation for position updates
-                LCT.animations.StartPositionAnimation(icon, xPos, remaining)
-            else
-                -- Fallback: direct position update
-                icon:ClearAllPoints()
-                icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
-            end
-        end
-        
+        -- Direct position update (updates every 0.1s for smooth movement)
+        icon:ClearAllPoints()
+        icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
         icon:Show()
         
         -- Update cooldown swipe
