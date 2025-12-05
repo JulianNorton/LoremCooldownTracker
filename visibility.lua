@@ -37,7 +37,16 @@ LCT.visibility = {
         LoremCTDB.visibility.showTimeText = LCT.visibility.showTimeText
         LoremCTDB.visibility.showIcons = LCT.visibility.showIcons
         
-        LCT:Debug("Saved visibility settings - shown:", LoremCTDB.visibility.shown)
+        -- Save frame position
+        local point, relativeTo, relativePoint, xOfs, yOfs = LCT.frame:GetPoint()
+        LoremCTDB.visibility.position = {
+            point = point,
+            relativePoint = relativePoint,
+            x = xOfs,
+            y = yOfs
+        }
+        
+        LCT:Debug("Saved visibility settings - shown:", LoremCTDB.visibility.shown, "pos:", xOfs, yOfs)
     end,
     
     -- Function to load visibility settings
@@ -74,6 +83,14 @@ LCT.visibility = {
         -- Apply background opacity
         if LCT.frame.bg then
             LCT.frame.bg:SetAlpha(bgOpacity)
+        end
+        
+        -- Restore frame position if saved
+        if settings.position then
+            local pos = settings.position
+            LCT.frame:ClearAllPoints()
+            LCT.frame:SetPoint(pos.point or "CENTER", UIParent, pos.relativePoint or "CENTER", pos.x or 0, pos.y or 0)
+            LCT:Debug("Restored frame position:", pos.x, pos.y)
         end
         
         -- Update all existing icons

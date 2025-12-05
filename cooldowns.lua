@@ -10,20 +10,18 @@ local trackedSpells = {}
 local trackedItems = {}
 local activeCooldownList = {} -- Track which cooldowns are currently active
 
+-- Performance: Track update state
+local isUpdating = false
+local cooldownEventFrame = nil
+local updateElapsed = 0
+
 -- Make tables accessible to other modules
 LCT.activeCooldowns = activeCooldowns
 LCT.cooldowns.trackedItems = trackedItems  -- Expose trackedItems table
 
--- Determine which item cooldown API to use based on WoW version
-local GetItemCooldownFunc
-if WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
-    -- Classic Era
-    GetItemCooldownFunc = function(id)
-        return GetSpellItemCooldown(id)  -- This is the correct API for Classic Era
-    end
-else
-    -- Retail or other versions
-    GetItemCooldownFunc = C_Item and C_Item.GetItemCooldown or GetItemCooldown
+-- Helper: Generate unique key for cooldown (prevents spell/item ID collision)
+local function GetCooldownKey(id, isItem)
+    return (isItem and "item_" or "spell_") .. id
 end
 
 -- Function to format time text
@@ -37,9 +35,46 @@ local function FormatTimeText(remaining)
     end
 end
 
+-- Performance: OnUpdate handler (defined here, set in Initialize)
+local function OnUpdateHandler(self, elapsed)
+    updateElapsed = updateElapsed + elapsed
+    if updateElapsed >= 0.1 then
+        local hasActive = false
+        for id, info in pairs(activeCooldownList) do
+            hasActive = true
+            cooldowns.UpdateCooldown(id, info.isItem)
+        end
+        updateElapsed = 0
+        
+        -- Performance: Stop updating if no active cooldowns
+        if not hasActive then
+            cooldowns.StopUpdating()
+        end
+    end
+end
+
+-- Performance: Start the OnUpdate timer
+function cooldowns.StartUpdating()
+    if not isUpdating and cooldownEventFrame then
+        isUpdating = true
+        cooldownEventFrame:SetScript("OnUpdate", OnUpdateHandler)
+        LCT:Debug("Cooldown updates STARTED")
+    end
+end
+
+-- Performance: Stop the OnUpdate timer
+function cooldowns.StopUpdating()
+    if isUpdating and cooldownEventFrame then
+        isUpdating = false
+        cooldownEventFrame:SetScript("OnUpdate", nil)
+        LCT:Debug("Cooldown updates STOPPED (idle)")
+    end
+end
+
 -- Function to create or get cooldown icon
 local function GetCooldownIcon(id, isItem)
-    if not activeCooldowns[id] then
+    local key = GetCooldownKey(id, isItem)
+    if not activeCooldowns[key] then
         local icon = CreateFrame("Frame", nil, LCT.frame)
         icon:SetSize(LCT.iconSize, LCT.iconSize)
         
@@ -75,11 +110,11 @@ local function GetCooldownIcon(id, isItem)
         icon.timeText:SetPoint("BOTTOM", icon, "BOTTOM", 0, 2)
         icon.timeText:SetShown(LCT.showTimeText)
         
-        activeCooldowns[id] = icon
-        LCT:Debug("Created new icon for", isItem and "item slot" or "spell", id)
+        activeCooldowns[key] = icon
+        LCT:Debug("Created new icon for", isItem and "item slot" or "spell", id, "key:", key)
     end
     
-    return activeCooldowns[id]
+    return activeCooldowns[key]
 end
 
 -- Function to update a cooldown
@@ -87,15 +122,17 @@ function cooldowns.UpdateCooldown(id, isItem)
     if not id then return end
     
     local start, duration, enabled
+    local key = GetCooldownKey(id, isItem)
+    
     if isItem then
         start, duration, enabled = GetInventoryItemCooldown("player", id)
         if not start or not duration then return end
         
         -- Only update if there's an actual cooldown or if we need to hide the icon
         if (start == 0 and duration == 0) or enabled == 0 then
-            if activeCooldowns[id] then
-                activeCooldowns[id]:Hide()
-                activeCooldownList[id] = nil -- Remove from active tracking
+            if activeCooldowns[key] then
+                activeCooldowns[key]:Hide()
+                activeCooldownList[key] = nil -- Remove from active tracking
             end
             return
         end
@@ -113,19 +150,26 @@ function cooldowns.UpdateCooldown(id, isItem)
         
         if remaining <= 0 then
             if icon:IsVisible() then
-                LCT.animations.StartFinishAnimation(icon)
-                activeCooldownList[id] = nil -- Remove from active tracking
+                if LCT.animations and LCT.animations.StartFinishAnimation then
+                    LCT.animations.StartFinishAnimation(icon)
+                else
+                    icon:Hide()
+                end
+                activeCooldownList[key] = nil -- Remove from active tracking
             end
             return
         end
         
         -- Add to active cooldown list if not already there
-        if not activeCooldownList[id] then
-            activeCooldownList[id] = {
+        if not activeCooldownList[key] then
+            activeCooldownList[key] = {
+                id = id,
                 start = start,
                 duration = duration,
                 isItem = isItem
             }
+            -- Performance: Start updating when first cooldown is added
+            cooldowns.StartUpdating()
         end
         
         -- Calculate position
@@ -151,9 +195,11 @@ function cooldowns.UpdateCooldown(id, isItem)
         -- Update time text
         icon.timeText:SetText(FormatTimeText(remaining))
     else
-        LCT.animations.CancelAnimation(icon)
+        if LCT.animations and LCT.animations.CancelAnimation then
+            LCT.animations.CancelAnimation(icon)
+        end
         icon:Hide()
-        activeCooldownList[id] = nil -- Remove from active tracking
+        activeCooldownList[key] = nil -- Remove from active tracking
     end
 end
 
@@ -178,10 +224,12 @@ end
 -- Function to unregister a spell
 function cooldowns.UnregisterSpell(spellID)
     trackedSpells[spellID] = nil
-    if activeCooldowns[spellID] then
-        activeCooldowns[spellID]:Hide()
-        activeCooldowns[spellID] = nil
+    local key = GetCooldownKey(spellID, false)
+    if activeCooldowns[key] then
+        activeCooldowns[key]:Hide()
+        activeCooldowns[key] = nil
     end
+    activeCooldownList[key] = nil
 end
 
 -- Function to register an item
@@ -195,10 +243,12 @@ end
 -- Function to unregister an item
 function cooldowns.UnregisterItem(itemID)
     trackedItems[itemID] = nil
-    if activeCooldowns[itemID] then
-        activeCooldowns[itemID]:Hide()
-        activeCooldowns[itemID] = nil
+    local key = GetCooldownKey(itemID, true)
+    if activeCooldowns[key] then
+        activeCooldowns[key]:Hide()
+        activeCooldowns[key] = nil
     end
+    activeCooldownList[key] = nil
 end
 
 -- Initialize cooldown tracking
@@ -206,26 +256,17 @@ function cooldowns.Initialize()
     LCT:Debug("Initializing cooldown tracking")
     
     -- Create event frame for cooldown updates
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-    eventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
-    eventFrame:RegisterEvent("ITEM_LOCK_CHANGED")
-    eventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
-    eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    cooldownEventFrame = CreateFrame("Frame")
+    cooldownEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+    cooldownEventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+    cooldownEventFrame:RegisterEvent("ITEM_LOCK_CHANGED")
+    cooldownEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
+    cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     
-    -- Add OnUpdate for active cooldowns
-    local updateElapsed = 0
-    eventFrame:SetScript("OnUpdate", function(self, elapsed)
-        updateElapsed = updateElapsed + elapsed
-        if updateElapsed >= 0.1 then -- Update active cooldowns every 0.1 seconds
-            for id, info in pairs(activeCooldownList) do
-                cooldowns.UpdateCooldown(id, info.isItem)
-            end
-            updateElapsed = 0
-        end
-    end)
+    -- Performance: OnUpdate is NOT set here - it only activates when cooldowns are tracked
+    -- This is controlled by StartUpdating() / StopUpdating()
     
-    eventFrame:SetScript("OnEvent", function(self, event, ...)
+    cooldownEventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "SPELL_UPDATE_COOLDOWN" or 
            event == "ACTIONBAR_UPDATE_COOLDOWN" or
            event == "BAG_UPDATE_COOLDOWN" then
@@ -247,6 +288,8 @@ function cooldowns.Initialize()
     
     -- Initial check after a short delay
     C_Timer.After(0.5, cooldowns.UpdateAll)
+    
+    LCT:Debug("Cooldown tracking initialized (OnUpdate disabled until cooldowns active)")
 end
 
 -- Return the module

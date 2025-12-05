@@ -6,30 +6,6 @@ LCT.items = items
 
 -- Constants
 local TRINKET_SLOTS = {13, 14}  -- First and second trinket slots
-local PVP_TRINKETS = {
-    -- Alliance PvP Trinkets
-    [18854] = true, -- Insignia of the Alliance
-    [18856] = true, -- Insignia of the Alliance (Warrior)
-    [18857] = true, -- Insignia of the Alliance (Paladin)
-    [18858] = true, -- Insignia of the Alliance (Hunter)
-    [18859] = true, -- Insignia of the Alliance (Rogue)
-    [18860] = true, -- Insignia of the Alliance (Priest)
-    [18862] = true, -- Insignia of the Alliance (Mage)
-    [18863] = true, -- Insignia of the Alliance (Warlock)
-    [18864] = true, -- Insignia of the Alliance (Druid)
-    
-    -- Horde PvP Trinkets
-    [18834] = true, -- Insignia of the Horde
-    [18845] = true, -- Insignia of the Horde (Warrior)
-    [18846] = true, -- Insignia of the Horde (Paladin)
-    [18847] = true, -- Insignia of the Horde (Hunter)
-    [18848] = true, -- Insignia of the Horde (Rogue)
-    [18849] = true, -- Insignia of the Horde (Priest)
-    [18850] = true, -- Insignia of the Horde (Shaman)
-    [18851] = true, -- Insignia of the Horde (Mage)
-    [18852] = true, -- Insignia of the Horde (Warlock)
-    [18853] = true, -- Insignia of the Horde (Druid)
-}
 
 -- Function to clean up unequipped trinkets
 local function CleanupTrinkets()
@@ -39,10 +15,11 @@ local function CleanupTrinkets()
         return
     end
 
-    -- Only unregister non-PvP trinkets that aren't in slots 13 or 14
+    -- Unregister any tracked items that aren't in slots 13 or 14
     for slotID in pairs(LCT.cooldowns.trackedItems) do
         if slotID ~= 13 and slotID ~= 14 then
             LCT.cooldowns.UnregisterItem(slotID)
+            LCT:Debug("Cleaned up old trinket slot:", slotID)
         end
     end
 end
@@ -54,6 +31,9 @@ local function UpdateEquippedTrinkets()
         LCT:Debug("ERROR - Cannot update trinkets, cooldowns module not initialized")
         return
     end
+
+    -- Clean up old entries first
+    CleanupTrinkets()
 
     -- Check trinket slots
     for _, slot in ipairs(TRINKET_SLOTS) do

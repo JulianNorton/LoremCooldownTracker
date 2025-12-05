@@ -29,8 +29,8 @@ function spells.ScanSpellBook()
                 local cooldown = GetSpellBaseCooldown(spellID)
                 LCT:Debug("Found spell:", spellName, "ID:", spellID, "Cooldown:", cooldown and cooldown/1000 or "none")
                 
-                -- Only track spells with cooldowns between 5s and GCD
-                if cooldown and cooldown > 5000 then
+                -- Only track spells with cooldowns > 2s (filters GCD)
+                if cooldown and cooldown > 2000 then
                     trackedSpells[spellID] = true
                     -- Register the spell with the cooldowns module
                     if LCT.cooldowns and LCT.cooldowns.RegisterSpell then
@@ -45,20 +45,8 @@ function spells.ScanSpellBook()
         end
     end
     
-    -- Manually check for Enrage if player is a Druid
-    if playerClass == "DRUID" then
-        local enrageID = 5229  -- Enrage spell ID
-        local name = GetSpellInfo(enrageID)
-        if IsSpellKnown(enrageID) then
-            LCT:Debug("Found Druid Enrage spell")
-            trackedSpells[enrageID] = true
-            if LCT.cooldowns and LCT.cooldowns.RegisterSpell then
-                LCT.cooldowns.RegisterSpell(enrageID)
-                count = count + 1
-                LCT:Debug("Registered Enrage spell")
-            end
-        end
-    end
+    -- NOTE: No hardcoded spells - the spellbook scan handles everything dynamically
+    -- This makes the addon work across all WoW versions (Classic, TBC, WotLK)
     
     LCT:Debug("Found", count, "spells with cooldowns")
     return trackedSpells
@@ -72,9 +60,9 @@ function spells.Initialize()
     local eventFrame = CreateFrame("Frame")
     
     -- Register spell-related events
+    -- NOTE: SPELL_UPDATE_COOLDOWN is handled by cooldowns.lua, not here
     eventFrame:RegisterEvent("SPELLS_CHANGED")
     eventFrame:RegisterEvent("LEARNED_SPELL_IN_TAB")
-    eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     
     -- Set up event handler
@@ -83,11 +71,8 @@ function spells.Initialize()
         if event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB" or event == "PLAYER_ENTERING_WORLD" then
             LCT:Debug("Spell list changed or player entered world, rescanning...")
             spells.ScanSpellBook()
-        elseif event == "SPELL_UPDATE_COOLDOWN" then
-            if LCT.cooldowns and LCT.cooldowns.UpdateAll then
-                LCT.cooldowns.UpdateAll()
-            end
         end
+        -- Removed: duplicate SPELL_UPDATE_COOLDOWN handler (handled by cooldowns.lua)
     end)
     
     -- Initial scan

@@ -41,10 +41,40 @@ This addon aims to help players better track and anticipate their cooldowns by p
 2. Extract the LoremCooldownTracker folder to your `World of Warcraft\_classic_\Interface\AddOns` directory
 3. Restart World of Warcraft if it's running
 
-## Usage
-* Type `/lct` or `/loremct` to open the configuration panel
-* Drag the unlocked frame to position it on your screen
-* Right-click the frame for quick options
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/lct` | Open settings panel |
+| `/lct toggle` | Show/hide the timeline frame |
+| `/lct lock` | Lock/unlock frame (locked = click-through) |
+| `/lct scan` | Rescan spellbook for abilities |
+| `/lct debug` | Toggle debug mode |
+| `/lcttest` | Run functionality tests |
+| `/lctperf` | Run performance benchmarks |
+
+### Performance Testing
+
+The addon includes built-in performance benchmarks accessible via `/lctperf`:
+
+1. **Timeline Update Test** - Measures ops/sec for timeline marker updates
+   - Good: ≥50 ops/sec
+   - Acceptable: ≥20 ops/sec
+
+2. **Cooldown Update Test** - Measures ops/sec for cooldown tracking
+   - Good: ≥25 ops/sec
+   - Acceptable: ≥10 ops/sec
+
+3. **Animation System Test** - Measures ops/sec for icon animations
+   - Good: ≥40 ops/sec
+   - Acceptable: ≥20 ops/sec
+
+**Idle Performance**: When no cooldowns are active, the addon uses 0% CPU (OnUpdate handlers are disabled).
+
+## Supported Versions
+- WoW Classic Era (1.15.x)
+- Burning Crusade Classic (2.5.x)
+- Wrath of the Lich King Classic (3.4.x)
 
 ## Modifications
 * Feel free to modify and fork this project, checkout the license.txt for details

@@ -15,8 +15,8 @@ LCT.defaults = {
     debug = false,
     
     -- Frame dimensions
-    barWidth = 300,
-    barHeight = 30,
+    barWidth = 420,
+    barHeight = 23,
     iconSize = 24,
     locked = false,
     
@@ -28,7 +28,7 @@ LCT.defaults = {
     
     -- Timeline
     maxTime = 300, -- 5 minutes
-    updateFrequency = 0.1
+    updateFrequency = 0.1 -- 10 times per second
 }
 
 -- Initialize current settings from defaults
@@ -57,6 +57,10 @@ frame:SetScript("OnMouseDown", function(self, button)
 end)
 frame:SetScript("OnMouseUp", function(self)
     self:StopMovingOrSizing()
+    -- Save position after moving
+    if LCT.visibility and LCT.visibility.SaveSettings then
+        LCT.visibility.SaveSettings()
+    end
 end)
 
 -- Create timeline background
@@ -156,8 +160,10 @@ SlashCmdList["LCT"] = function(msg)
         end
     elseif msg == "lock" then
         frame.locked = not frame.locked
+        -- When locked: disable mouse so clicks pass through
+        -- When unlocked: enable mouse for dragging
         frame:EnableMouse(not frame.locked)
-        print("LoremCT: Frame " .. (frame.locked and "locked" or "unlocked"))
+        print("LoremCT: Frame " .. (frame.locked and "locked (click-through)" or "unlocked (draggable)"))
     elseif msg == "toggle" then
         if frame:IsVisible() then
             frame:Hide()

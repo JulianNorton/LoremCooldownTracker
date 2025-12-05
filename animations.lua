@@ -46,9 +46,10 @@ end
 -- Create animation frame
 LCT.animations.updateFrame = CreateFrame("Frame")
 LCT.animations.updateFrame.lastUpdate = 0
+LCT.animations.updateFrame.isAnimating = false
 
--- Set up the OnUpdate script
-LCT.animations.updateFrame:SetScript("OnUpdate", function(self, elapsed)
+-- OnUpdate handler function (separate so we can set/unset it)
+local function AnimationOnUpdate(self, elapsed)
     -- FPS-aware update throttling
     local now = GetTime()
     local timeSinceLastUpdate = now - self.lastUpdate
@@ -131,10 +132,26 @@ LCT.animations.updateFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
     
+    -- Performance: Stop OnUpdate when no active animations
     if not hasActiveAnimations then
         self:SetScript("OnUpdate", nil)
+        self.isAnimating = false
+        LCT:Debug("Animations STOPPED (idle)")
     end
-end)
+end
+
+-- Performance: Start animations OnUpdate
+local function StartAnimating()
+    local frame = LCT.animations.updateFrame
+    if not frame.isAnimating then
+        frame.isAnimating = true
+        frame:SetScript("OnUpdate", AnimationOnUpdate)
+        LCT:Debug("Animations STARTED")
+    end
+end
+
+-- NOTE: OnUpdate is NOT set here - starts disabled for performance
+-- It only activates when StartPositionAnimation or StartFinishAnimation is called
 
 -- Function to start position animation
 function LCT.animations.StartPositionAnimation(frame, targetX, remaining)
@@ -157,7 +174,7 @@ function LCT.animations.StartPositionAnimation(frame, targetX, remaining)
         remaining = remaining
     }
     
-    LCT.animations.updateFrame:SetScript("OnUpdate", LCT.animations.updateFrame:GetScript("OnUpdate"))
+    StartAnimating()
 end
 
 -- Function to start freeze-fade animation
@@ -168,7 +185,7 @@ function LCT.animations.StartFinishAnimation(icon)
         startTime = GetTime()
     }
     
-    LCT.animations.updateFrame:SetScript("OnUpdate", LCT.animations.updateFrame:GetScript("OnUpdate"))
+    StartAnimating()
 end
 
 -- Function to cancel animation
