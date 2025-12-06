@@ -3,6 +3,7 @@ local addonName, LCT = ...
 -- Performance: Cache global functions
 local GetFramerate = GetFramerate
 local abs = math.abs
+local sqrt = math.sqrt
 
 -- Timeline functions
 local timeline = {}
@@ -38,9 +39,10 @@ function timeline.UpdateMarkers()
     local width = frame:GetWidth()
     local iconSize = LCT.iconSize
     
-    -- Function to calculate marker position
     local function GetMarkerPosition(timeRemaining)
-        return (timeRemaining / LCT.maxTime) * (width - iconSize) + (iconSize/2)
+        local timeRatio = timeRemaining / LCT.maxTime
+        local scale = sqrt(timeRatio)
+        return scale * (width - iconSize) + (iconSize/2)
     end
     
     -- Update 0-second marker (left)
@@ -58,6 +60,14 @@ function timeline.UpdateMarkers()
     tenSecMarker:ClearAllPoints()
     tenSecMarker:SetPoint("TOP", frame, "TOPLEFT", GetMarkerPosition(10), 0)
     tenSecMarker:Show()
+    
+    -- Update 10s text
+    local tenSecText = GetText(3)
+    tenSecText:SetText("10s")
+    tenSecText:ClearAllPoints()
+    tenSecText:SetPoint("BOTTOM", tenSecMarker, "TOP", 0, 1)
+    tenSecText:SetTextColor(1, 1, 1, 0.3)
+    tenSecText:Show()
     
     -- Update 30-second marker
     local halfMinMarker = GetMarker(3)

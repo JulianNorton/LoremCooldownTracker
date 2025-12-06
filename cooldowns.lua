@@ -5,6 +5,7 @@ local GetTime = GetTime
 local pairs = pairs
 local floor = math.floor
 local min = math.min
+local sqrt = math.sqrt
 local format = string.format
 
 -- Cache bag-related functions for bag item support
@@ -81,43 +82,6 @@ local function FormatTimeText(remaining)
     end
 end
 
--- Performance: OnUpdate handler (defined here, set in Initialize)
-local function OnUpdateHandler(self, elapsed)
-    updateElapsed = updateElapsed + elapsed
-    if updateElapsed >= 0.1 then
-        local hasActive = false
-        for key, info in pairs(activeCooldownList) do
-            hasActive = true
-            -- Use info.id (the actual spell/item ID), not key (which is prefixed like "spell_100")
-            cooldowns.UpdateCooldown(info.id, info.isItem)
-        end
-        updateElapsed = 0
-        
-        -- Performance: Stop updating if no active cooldowns
-        if not hasActive then
-            cooldowns.StopUpdating()
-        end
-    end
-end
-
--- Performance: Start the OnUpdate timer
-function cooldowns.StartUpdating()
-    if not isUpdating and cooldownEventFrame then
-        isUpdating = true
-        cooldownEventFrame:SetScript("OnUpdate", OnUpdateHandler)
-        LCT:Debug("Cooldown updates STARTED")
-    end
-end
-
--- Performance: Stop the OnUpdate timer
-function cooldowns.StopUpdating()
-    if isUpdating and cooldownEventFrame then
-        isUpdating = false
-        cooldownEventFrame:SetScript("OnUpdate", nil)
-        LCT:Debug("Cooldown updates STOPPED (idle)")
-    end
-end
-
 -- Function to create or get cooldown icon
 local function GetCooldownIcon(id, isItem)
     local key = GetCooldownKey(id, isItem)
@@ -154,8 +118,8 @@ local function GetCooldownIcon(id, isItem)
         -- Create cooldown model
         icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
         icon.cooldown:SetAllPoints()
-        icon.cooldown:SetDrawEdge(false) -- Disabled: testing how this looks
-        icon.cooldown:SetDrawSwipe(false)  -- Disabled: swipe makes icons look black at start
+        icon.cooldown:SetDrawEdge(false) 
+        icon.cooldown:SetDrawSwipe(false)
         
         -- Create time text
         icon.timeText = icon:CreateFontString(nil, "OVERLAY")
@@ -170,7 +134,102 @@ local function GetCooldownIcon(id, isItem)
     return activeCooldowns[key]
 end
 
--- Function to update a cooldown
+-- Helper: Update a single icon's position and text
+local function UpdateIconPosition(key, info, currentTime)
+    local icon = activeCooldowns[key]
+    if not icon then return false end
+    
+    local remaining = (info.start + info.duration) - currentTime
+    
+    if remaining <= 0 then
+        if icon:IsVisible() then
+            if LCT.animations and LCT.animations.StartFinishAnimation then
+                LCT.animations.StartFinishAnimation(icon)
+            else
+                icon:Hide()
+            end
+        end
+        return false -- Request removal from active list
+    end
+    
+    -- Calculate position with non-linear scaling (square root)
+    local effectiveRemaining = min(remaining, LCT.maxTime)
+    local width = LCT.frame:GetWidth()
+    local iconSize = LCT.iconSize
+    
+    local timeRatio = effectiveRemaining / LCT.maxTime
+    local scale = sqrt(timeRatio)
+    local xPos = scale * (width - iconSize) + (iconSize/2)
+    
+    -- Direct position update
+    icon:ClearAllPoints()
+    icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
+    
+    -- Z-index
+    local baseLevel = LCT.frame:GetFrameLevel() + 1
+    local zIndex = baseLevel + floor(LCT.maxTime - effectiveRemaining)
+    icon:SetFrameLevel(zIndex)
+    
+    icon:Show()
+    icon.timeText:SetText(FormatTimeText(remaining))
+    
+    return true -- Keep in active list
+end
+
+-- Performance: OnUpdate handler
+local lastGlobalUpdate = 0
+local function OnUpdateHandler(self, elapsed)
+    local currentTime = GetTime()
+    
+    -- Optimization: Only full update every 0.1s, unless items are in critical range (< 5s)
+    local doFullUpdate = false
+    if currentTime - lastGlobalUpdate >= 0.1 then
+        doFullUpdate = true
+        lastGlobalUpdate = currentTime
+    end
+    
+    local hasActive = false
+    
+    for key, info in pairs(activeCooldownList) do
+        local remaining = (info.start + info.duration) - currentTime
+        
+        -- Update if in critical window (last 5s) OR it's time for a full update
+        if remaining <= 5 or doFullUpdate then
+             local isActive = UpdateIconPosition(key, info, currentTime)
+             if isActive then 
+                 hasActive = true 
+             else 
+                 activeCooldownList[key] = nil 
+             end
+        else
+             hasActive = true -- Still active, just waiting for throttle
+        end
+    end
+    
+    if not hasActive then
+        cooldowns.StopUpdating()
+    end
+end
+
+-- Performance: Start the OnUpdate timer
+function cooldowns.StartUpdating()
+    if not isUpdating and cooldownEventFrame then
+        isUpdating = true
+        cooldownEventFrame:SetScript("OnUpdate", OnUpdateHandler)
+        LCT:Debug("Cooldown updates STARTED")
+    end
+end
+
+-- Performance: Stop the OnUpdate timer
+function cooldowns.StopUpdating()
+    if isUpdating and cooldownEventFrame then
+        isUpdating = false
+        cooldownEventFrame:SetScript("OnUpdate", nil)
+        LCT:Debug("Cooldown updates STOPPED (idle)")
+    end
+end
+
+-- Function to update a cooldown (Lightweight: Logic only)
 function cooldowns.UpdateCooldown(id, isItem)
     if not id then return end
     
@@ -179,121 +238,64 @@ function cooldowns.UpdateCooldown(id, isItem)
     
     if isItem then
         if IsBagItem(id) then
-            -- Bag item: use helper to find in bags
             local actualItemID = GetActualItemID(id)
             start, duration, enabled = GetBagItemCooldown(actualItemID)
             if not start or not duration then
-                -- Item no longer in bags or no cooldown
-                -- If we were tracking it, check if it should still be active
                 if activeCooldownList[key] then
+                    -- Keep cached info if item temporarily missing but known
                     local info = activeCooldownList[key]
                     start = info.start
                     duration = info.duration
                     enabled = 1
-                    LCT:Debug("Item missing from bags, using cached info for:", key)
                 else
-                    if activeCooldowns[key] then
-                        activeCooldowns[key]:Hide()
-                        activeCooldownList[key] = nil
-                    end
+                    if activeCooldowns[key] then activeCooldowns[key]:Hide() end
                     return
                 end
             end
         else
-            -- Equipped item: use inventory slot
             start, duration, enabled = GetInventoryItemCooldown("player", id)
-            if not start or not duration then 
-                LCT:Debug("Equipped item cooldown lookup failed:", id)
-                return 
-            end
+            if not start or not duration then return end
         end
         
-        -- Only update if there's an actual cooldown or if we need to hide the icon
         if (start == 0 and duration == 0) or enabled == 0 then
-            -- ... (existing zero check block) ...
-            if activeCooldowns[key] then
-                -- ...
-            end
+            -- Cooldown cleared
+            if activeCooldowns[key] then activeCooldowns[key]:Hide() end
+            activeCooldownList[key] = nil
             return
         end
     else
         start, duration, enabled = GetSpellCooldown(id)
-        if not start or enabled == 0 then 
-            LCT:Debug("Spell lookup failed or disabled:", id, "Start:", start, "Enabled:", enabled)
-            return 
-        end
-        -- LCT:Debug("Spell lookup success:", id, "Start:", start, "Duration:", duration, "Enabled:", enabled)
+        if not start or enabled == 0 then return end
     end
     
     local icon = GetCooldownIcon(id, isItem)
     if not icon then return end
     
     if start > 0 and duration > 5 then -- Only track cooldowns longer than five seconds
+        -- Add/Update to active cooldown list
+        activeCooldownList[key] = {
+            id = id,
+            start = start,
+            duration = duration,
+            isItem = isItem
+        }
+        
         local currentTime = GetTime()
         local remaining = (start + duration) - currentTime
         
-        if remaining <= 0 then
-            if icon:IsVisible() then
-                if LCT.animations and LCT.animations.StartFinishAnimation then
-                    LCT:Debug("Triggering StartFinishAnimation from timer")
-                    LCT.animations.StartFinishAnimation(icon)
-                else
-                    icon:Hide()
-                end
-                activeCooldownList[key] = nil -- Remove from active tracking
-            else
-                -- Timer expired but icon invisible, just stop tracking
-                activeCooldownList[key] = nil
-            end
-            return
+        if remaining > 0 then
+             -- Force initial update
+             UpdateIconPosition(key, activeCooldownList[key], currentTime)
+             
+             if icon.cooldown then
+                icon.cooldown:SetCooldown(start, duration)
+             end
+             
+             cooldowns.StartUpdating()
         end
-        
-        -- Add to active cooldown list if not already there
-        if not activeCooldownList[key] then
-            activeCooldownList[key] = {
-                id = id,
-                start = start,
-                duration = duration,
-                isItem = isItem
-            }
-            -- Performance: Start updating when first cooldown is added
-            cooldowns.StartUpdating()
-        end
-        
-        -- Calculate position
-        local width = LCT.frame:GetWidth()
-        local iconSize = LCT.iconSize
-        
-        -- Clamp remaining time to maxTime (default 300s = 5min)
-        remaining = min(remaining, LCT.maxTime)
-        
-        -- Calculate the actual position
-        local xPos = (remaining / LCT.maxTime) * (width - iconSize) + (iconSize/2)
-        
-        -- Direct position update (updates every 0.1s for smooth movement)
-        icon:ClearAllPoints()
-        icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
-        
-        -- Z-index: icons with shorter remaining time should be on top (higher frame level)
-        -- Frame level is inverted: shorter remaining = higher level
-        local baseLevel = LCT.frame:GetFrameLevel() + 1
-        local zIndex = baseLevel + floor(LCT.maxTime - remaining)
-        icon:SetFrameLevel(zIndex)
-        
-        icon:Show()
-        
-        -- Update cooldown swipe
-        if icon.cooldown then
-            icon.cooldown:SetCooldown(start, duration)
-        end
-        
-        -- Update time text
-        icon.timeText:SetText(FormatTimeText(remaining))
     else
-        -- Duration is small (<= 5) or start is 0
-        -- If we were tracking this, it means the cooldown finished (or became insignificant)
+        -- Cooldown finished or too short
         if activeCooldownList[key] then
-            LCT:Debug("Tracked cooldown finished via duration check:", id)
             local icon = activeCooldowns[key]
             if icon and icon:IsVisible() then
                  if LCT.animations and LCT.animations.StartFinishAnimation then
@@ -306,17 +308,10 @@ function cooldowns.UpdateCooldown(id, isItem)
             end
             activeCooldownList[key] = nil
         else
-            -- Not tracking, just ignore/hide
-            if LCT.animations and LCT.animations.CancelAnimation then
-                LCT.animations.CancelAnimation(icon)
-            end
-            icon:Hide()
-            activeCooldownList[key] = nil
+             if icon then icon:Hide() end
         end
     end
 end
-
--- Function to update all cooldowns
 function cooldowns.UpdateAll()
     for spellID in pairs(trackedSpells) do
         cooldowns.UpdateCooldown(spellID, false)

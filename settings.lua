@@ -59,7 +59,7 @@ end
 
 -- Create settings frame
 local settingsFrame = CreateFrame("Frame", "LoremCTSettings", UIParent, "BasicFrameTemplateWithInset")
-settingsFrame:SetSize(300, 400)
+settingsFrame:SetSize(300, 500)
 settingsFrame:SetPoint("CENTER")
 settingsFrame:SetMovable(true)
 settingsFrame:EnableMouse(true)

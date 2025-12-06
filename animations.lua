@@ -10,7 +10,7 @@ LCT.animations = {}
 
 -- Animation settings
 local FINISH_POP_DURATION = 0.3    -- Scale up over 0.3 seconds
-local FINISH_FADE_DURATION = 0.3   -- Fade out in final 0.3 seconds
+local FINISH_FADE_DURATION = 0.15   -- Fade out in final 0.15 seconds
 local FINISH_TOTAL_DURATION = FINISH_POP_DURATION + FINISH_FADE_DURATION  -- 0.6s total
 local POP_SCALE = 1.5              -- Scale up to 150% at peak
 local MIN_UPDATE_INTERVAL = 0.016  -- ~60 FPS max
