@@ -1,6 +1,7 @@
 -- Create addon namespace
 local addonName, LCT = ...
 LCT.version = "1.1.0"
+LCT.core = true  -- Mark core module as loaded for test framework
 
 -- Debug print function
 function LCT:Debug(...)

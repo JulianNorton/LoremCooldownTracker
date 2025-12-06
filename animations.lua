@@ -1,54 +1,35 @@
 local addonName, LCT = ...
 
+-- Performance: Cache global functions
+local GetTime = GetTime
+local GetFramerate = GetFramerate
+local pairs = pairs
+
 -- Initialize animations namespace
 LCT.animations = {}
 
 -- Animation settings
-local ANIMATION_DURATION = 0.1     -- Smooth 100ms transitions
-local FINISH_ANIMATION_DURATION = 0.2
-local FINAL_SECONDS_SCALE = 1.0    -- No scaling (was 2.0, caused overlap)
-local FINAL_SECONDS_THRESHOLD = 10
+local FINISH_POP_DURATION = 0.3    -- Scale up over 0.3 seconds
+local FINISH_FADE_DURATION = 0.3   -- Fade out in final 0.3 seconds
+local FINISH_TOTAL_DURATION = FINISH_POP_DURATION + FINISH_FADE_DURATION  -- 0.6s total
+local POP_SCALE = 1.5              -- Scale up to 150% at peak
 local MIN_UPDATE_INTERVAL = 0.016  -- ~60 FPS max
-local FPS_THRESHOLD = 30  -- FPS threshold for reduced updates
-local POSITION_THRESHOLD = 0.5    -- Minimum position change to update (was 0.1)
-local SCALE_THRESHOLD = 0.05   -- Minimum scale change to update
-local ALPHA_THRESHOLD = 0.05   -- Minimum alpha change to update
+local FPS_THRESHOLD = 30           -- FPS threshold for reduced updates
 
--- Table to store active animations
-local activeAnimations = {}
+-- Table to store active finish animations
 local finishAnimations = {}
-
--- Optimization: Pre-calculate common values
-local function GetProgressAndElapsed(startTime, now, duration)
-    local elapsed = now - startTime
-    if elapsed >= duration then
-        return 1, elapsed
-    end
-    return elapsed / duration, elapsed
-end
-
--- Optimization: Efficient position calculation
-local function CalculatePosition(progress, startX, targetX)
-    -- Linear interpolation
-    return startX + ((targetX - startX) * progress)
-end
-
--- Optimization: Efficient scale calculation
-local function CalculateScale(remaining)
-    if not remaining or remaining > FINAL_SECONDS_THRESHOLD then
-        return 1
-    end
-    -- Pre-calculate 1/FINAL_SECONDS_THRESHOLD
-    local factor = 1 / FINAL_SECONDS_THRESHOLD
-    return 1 + (FINAL_SECONDS_SCALE - 1) * (1 - remaining * factor)
-end
 
 -- Create animation frame
 LCT.animations.updateFrame = CreateFrame("Frame")
 LCT.animations.updateFrame.lastUpdate = 0
 LCT.animations.updateFrame.isAnimating = false
 
--- OnUpdate handler function (separate so we can set/unset it)
+-- Easing function: ease-out for smooth pop
+local function EaseOut(t)
+    return 1 - (1 - t) * (1 - t)
+end
+
+-- OnUpdate handler for animations
 local function AnimationOnUpdate(self, elapsed)
     -- FPS-aware update throttling
     local now = GetTime()
@@ -68,67 +49,33 @@ local function AnimationOnUpdate(self, elapsed)
     
     local hasActiveAnimations = false
     
-    -- Update position animations
-    for icon, anim in pairs(activeAnimations) do
-        if icon:IsVisible() then
-            local progress, elapsed = GetProgressAndElapsed(anim.startTime, now, anim.duration)
-            
-            if progress >= 1 then
-                -- Animation complete - single update
-                icon:ClearAllPoints()
-                icon:SetPoint("CENTER", LCT.frame, "LEFT", anim.targetX, 0)
-                if anim.remaining and anim.remaining <= FINAL_SECONDS_THRESHOLD then
-                    icon:SetScale(1)
-                end
-                activeAnimations[icon] = nil
-            else
-                -- Calculate position only if needed
-                local currentX = CalculatePosition(progress, anim.startX, anim.targetX)
-                
-                -- Update position only if change is significant
-                if not anim.lastX or math.abs(currentX - anim.lastX) > POSITION_THRESHOLD then
-                    icon:ClearAllPoints()
-                    icon:SetPoint("CENTER", LCT.frame, "LEFT", currentX, 0)
-                    anim.lastX = currentX
-                end
-                
-                -- Update scale only if in final seconds threshold
-                if anim.remaining and anim.remaining <= FINAL_SECONDS_THRESHOLD then
-                    local newScale = CalculateScale(anim.remaining)
-                    if not anim.lastScale or math.abs(newScale - anim.lastScale) > SCALE_THRESHOLD then
-                        icon:SetScale(newScale)
-                        anim.lastScale = newScale
-                    end
-                end
-                
-                hasActiveAnimations = true
-            end
-        else
-            activeAnimations[icon] = nil
-        end
-    end
-    
-    -- Update finish animations
+    -- Update finish animations (pop + fade)
     for icon, anim in pairs(finishAnimations) do
-        local progress, elapsed = GetProgressAndElapsed(anim.startTime, now, FINISH_ANIMATION_DURATION)
+        local elapsed = now - anim.startTime
         
-        if progress >= 1 then
-            -- Animation complete - single update
+        if elapsed >= FINISH_TOTAL_DURATION then
+            -- Animation complete - reset and hide
             icon:Hide()
             icon:SetScale(1)
             icon:SetAlpha(1)
             finishAnimations[icon] = nil
         else
-            -- Calculate alpha only if needed
-            local newAlpha = 1 - progress
-            
-            -- Update alpha only if change is significant
-            if not anim.lastAlpha or math.abs(newAlpha - anim.lastAlpha) > ALPHA_THRESHOLD then
-                icon:SetAlpha(newAlpha)
-                anim.lastAlpha = newAlpha
-            end
-            
             hasActiveAnimations = true
+            
+            if elapsed < FINISH_POP_DURATION then
+                -- Pop phase: scale up with easing
+                local popProgress = elapsed / FINISH_POP_DURATION
+                local easedProgress = EaseOut(popProgress)
+                local scale = 1 + (POP_SCALE - 1) * easedProgress
+                icon:SetScale(scale)
+                icon:SetAlpha(1)
+            else
+                -- Fade phase: stay at peak scale, fade out
+                local fadeElapsed = elapsed - FINISH_POP_DURATION
+                local fadeProgress = fadeElapsed / FINISH_FADE_DURATION
+                icon:SetScale(POP_SCALE)
+                icon:SetAlpha(1 - fadeProgress)
+            end
         end
     end
     
@@ -145,39 +92,13 @@ local function StartAnimating()
     local frame = LCT.animations.updateFrame
     if not frame.isAnimating then
         frame.isAnimating = true
+        frame.lastUpdate = GetTime()
         frame:SetScript("OnUpdate", AnimationOnUpdate)
         LCT:Debug("Animations STARTED")
     end
 end
 
--- NOTE: OnUpdate is NOT set here - starts disabled for performance
--- It only activates when StartPositionAnimation or StartFinishAnimation is called
-
--- Function to start position animation
-function LCT.animations.StartPositionAnimation(frame, targetX, remaining)
-    if not frame or not frame:IsObjectType("Frame") then return end
-    
-    -- Ensure frame has a valid point
-    local point, relativeTo, relativePoint, x, y = frame:GetPoint()
-    if not point then
-        -- If no point exists, set a default one
-        frame:ClearAllPoints()
-        frame:SetPoint("CENTER", LCT.frame, "LEFT", 0, 0)
-        x = 0
-    end
-    
-    activeAnimations[frame] = {
-        startTime = GetTime(),
-        duration = ANIMATION_DURATION,
-        startX = x or 0,
-        targetX = targetX,
-        remaining = remaining
-    }
-    
-    StartAnimating()
-end
-
--- Function to start freeze-fade animation
+-- Function to start pop-and-fade finish animation
 function LCT.animations.StartFinishAnimation(icon)
     if not icon then return end
     
@@ -185,15 +106,29 @@ function LCT.animations.StartFinishAnimation(icon)
         startTime = GetTime()
     }
     
+    -- Ensure visible for animation
+    icon:Show()
+    icon:SetAlpha(1)
+    
     StartAnimating()
+end
+
+-- Function to check if icon is currently finishing
+function LCT.animations.IsFinishing(icon)
+    return icon and finishAnimations[icon] ~= nil
 end
 
 -- Function to cancel animation
 function LCT.animations.CancelAnimation(icon)
     if not icon then return end
     
-    activeAnimations[icon] = nil
     finishAnimations[icon] = nil
     icon:SetScale(1)
     icon:SetAlpha(1)
+end
+
+-- Legacy function (kept for compatibility, no longer used)
+function LCT.animations.StartPositionAnimation(frame, targetX, remaining)
+    -- Position animations removed - cooldowns.lua handles position directly
+    -- This stub prevents errors if called
 end 

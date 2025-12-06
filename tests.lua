@@ -185,10 +185,10 @@ function tests:RunAll()
             for _, dep in ipairs(info.dependencies) do
                 total = total + 1
                 if LCT[dep] then
-                    print(string.format("✓ Required module '%s' exists", dep))
+                    print(string.format("YES - Required module '%s' exists", dep))
                     passed = passed + 1
                 else
-                    print(string.format("✗ Required module '%s' missing", dep))
+                    print(string.format("NO - Required module '%s' missing", dep))
                     dependenciesMet = false
                     break -- Skip remaining tests if dependency missing
                 end
@@ -199,26 +199,26 @@ function tests:RunAll()
                 if category == "core" then
                     total = total + 1
                     if LCT.frame and LCT.frame.GetObjectType and LCT.frame:GetObjectType() == "Frame" then
-                        print("✓ Main frame exists")
+                        print("YES - Main frame exists")
                         passed = passed + 1
                     else
-                        print("✗ Main frame missing")
+                        print("NO - Main frame missing")
                     end
                     
                     total = total + 1
                     if type(LCT.Debug) == "function" then
-                        print("✓ Debug logging system exists")
+                        print("YES - Debug logging system exists")
                         passed = passed + 1
                     else
-                        print("✗ Debug logging system missing")
+                        print("NO - Debug logging system missing")
                     end
                     
                     total = total + 1
                     if type(LCT.defaults) == "table" then
-                        print("✓ Default settings exist")
+                        print("YES - Default settings exist")
                         passed = passed + 1
                     else
-                        print("✗ Default settings missing")
+                        print("NO - Default settings missing")
                     end
                 end
                 
@@ -226,10 +226,10 @@ function tests:RunAll()
                 if category == "spells" then
                     total = total + 1
                     if type(LCT.spells.ScanSpellBook) == "function" then
-                        print("✓ Spell scanning function exists")
+                        print("YES - Spell scanning function exists")
                         passed = passed + 1
                     else
-                        print("✗ Spell scanning function missing")
+                        print("NO - Spell scanning function missing")
                     end
                 end
                 
@@ -237,26 +237,26 @@ function tests:RunAll()
                 if category == "cooldowns" then
                     total = total + 1
                     if type(LCT.cooldowns) == "table" then
-                        print("✓ Cooldown module exists")
+                        print("YES - Cooldown module exists")
                         passed = passed + 1
                     else
-                        print("✗ Cooldown module missing")
+                        print("NO - Cooldown module missing")
                     end
                     
                     total = total + 1
                     if LCT.cooldowns and type(LCT.cooldowns.UpdateAll) == "function" then
-                        print("✓ Cooldown update function exists")
+                        print("YES - Cooldown update function exists")
                         passed = passed + 1
                     else
-                        print("✗ Cooldown update function missing")
+                        print("NO - Cooldown update function missing")
                     end
                     
                     total = total + 1
                     if LCT.activeCooldowns then
-                        print("✓ Active cooldowns tracking exists")
+                        print("YES - Active cooldowns tracking exists")
                         passed = passed + 1
                     else
-                        print("✗ Active cooldowns tracking missing")
+                        print("NO - Active cooldowns tracking missing")
                     end
                 end
                 
@@ -264,18 +264,18 @@ function tests:RunAll()
                 if category == "timeline" then
                     total = total + 1
                     if type(LCT.timeline) == "table" then
-                        print("✓ Timeline module exists")
+                        print("YES - Timeline module exists")
                         passed = passed + 1
                     else
-                        print("✗ Timeline module missing")
+                        print("NO - Timeline module missing")
                     end
                     
                     total = total + 1
                     if LCT.timeline and type(LCT.timeline.UpdateMarkers) == "function" then
-                        print("✓ Timeline marker update function exists")
+                        print("YES - Timeline marker update function exists")
                         passed = passed + 1
                     else
-                        print("✗ Timeline marker update function missing")
+                        print("NO - Timeline marker update function missing")
                     end
                 end
                 
@@ -283,45 +283,45 @@ function tests:RunAll()
                 if category == "animations" then
                     total = total + 1
                     if type(LCT.animations) == "table" then
-                        print("✓ Animation module exists")
+                        print("YES - Animation module exists")
                         passed = passed + 1
                     else
-                        print("✗ Animation module missing")
+                        print("NO - Animation module missing")
                     end
                     
                     total = total + 1
                     if LCT.animations and type(LCT.animations.StartPositionAnimation) == "function" then
-                        print("✓ Position animation function exists")
+                        print("YES - Position animation function exists")
                         passed = passed + 1
                     else
-                        print("✗ Position animation function missing")
+                        print("NO - Position animation function missing")
                     end
                     
                     total = total + 1
                     if LCT.animations and type(LCT.animations.StartFinishAnimation) == "function" then
-                        print("✓ Finish animation function exists")
+                        print("YES - Finish animation function exists")
                         passed = passed + 1
                     else
-                        print("✗ Finish animation function missing")
+                        print("NO - Finish animation function missing")
                     end
                 end
                 
                 -- Settings Tests
                 if category == "settings" then
                     total = total + 1
-                    if type(LCT.db) == "table" then
-                        print("✓ Settings database exists")
+                    if type(LoremCTDB) == "table" then
+                        print("YES - Settings database (SavedVariables) exists")
                         passed = passed + 1
                     else
-                        print("✗ Settings database missing")
+                        print("NO - Settings database (SavedVariables) missing")
                     end
                     
                     total = total + 1
                     if LCT.settingsFrame then
-                        print("✓ Settings UI frame exists")
+                        print("YES - Settings UI frame exists")
                         passed = passed + 1
                     else
-                        print("✗ Settings UI frame missing")
+                        print("NO - Settings UI frame missing")
                     end
                 end
                 
@@ -329,18 +329,18 @@ function tests:RunAll()
                 if category == "visibility" then
                     total = total + 1
                     if type(LCT.visibility) == "table" then
-                        print("✓ Visibility module exists")
+                        print("YES - Visibility module exists")
                         passed = passed + 1
                     else
-                        print("✗ Visibility module missing")
+                        print("NO - Visibility module missing")
                     end
                     
                     total = total + 1
                     if LCT.visibility and type(LCT.visibility.UpdateIconVisibility) == "function" then
-                        print("✓ Icon visibility update function exists")
+                        print("YES - Icon visibility update function exists")
                         passed = passed + 1
                     else
-                        print("✗ Icon visibility update function missing")
+                        print("NO - Icon visibility update function missing")
                     end
                 end
             end
@@ -597,11 +597,23 @@ end
 -- Add performance test slash command
 SLASH_LCTPERF1 = "/lctperf"
 SlashCmdList["LCTPERF"] = function(msg)
-    tests:RunPerformanceTests()
+    print("LoremCT: Starting performance tests...")
+    local success, err = pcall(function()
+        tests:RunPerformanceTests()
+    end)
+    if not success then
+        print("LoremCT Performance Test ERROR: " .. tostring(err))
+    end
 end
 
 -- Add slash command for testing
 SLASH_LCTTEST1 = "/lcttest"
 SlashCmdList["LCTTEST"] = function(msg)
-    tests:RunAll()
+    print("LoremCT: Running tests...")
+    local success, err = pcall(function()
+        tests:RunAll()
+    end)
+    if not success then
+        print("LoremCT Test ERROR: " .. tostring(err))
+    end
 end 

@@ -1,5 +1,9 @@
 local addonName, LCT = ...
 
+-- Performance: Cache global functions
+local GetFramerate = GetFramerate
+local abs = math.abs
+
 -- Timeline functions
 local timeline = {}
 LCT.timeline = timeline
@@ -154,7 +158,7 @@ function timeline.Initialize()
             local currentWidth = LCT.frame:GetWidth()
             local currentHeight = LCT.frame:GetHeight()
             
-            if math.abs(currentWidth - lastWidth) > 5 or math.abs(currentHeight - lastHeight) > 5 then
+            if abs(currentWidth - lastWidth) > 5 or abs(currentHeight - lastHeight) > 5 then
                 timeline.UpdateMarkers()
                 lastWidth = currentWidth
                 lastHeight = currentHeight

@@ -29,8 +29,8 @@ function spells.ScanSpellBook()
                 local cooldown = GetSpellBaseCooldown(spellID)
                 LCT:Debug("Found spell:", spellName, "ID:", spellID, "Cooldown:", cooldown and cooldown/1000 or "none")
                 
-                -- Only track spells with cooldowns > 2s (filters GCD)
-                if cooldown and cooldown > 2000 then
+                -- Only track spells with cooldowns > 5s (filters GCD)
+                if cooldown and cooldown > 5000 then
                     trackedSpells[spellID] = true
                     -- Register the spell with the cooldowns module
                     if LCT.cooldowns and LCT.cooldowns.RegisterSpell then
