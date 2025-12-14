@@ -59,7 +59,7 @@ end
 
 -- Create settings frame
 local settingsFrame = CreateFrame("Frame", "LoremCTSettings", UIParent, "BasicFrameTemplateWithInset")
-settingsFrame:SetSize(300, 500)
+settingsFrame:SetSize(300, 600)
 settingsFrame:SetPoint("CENTER")
 settingsFrame:SetMovable(true)
 settingsFrame:EnableMouse(true)
@@ -202,6 +202,43 @@ visibilityControls.bgOpacitySlider:SetPoint("TOPLEFT", visibilityControls.showFr
 visibilityControls.showTimeTextButton:SetPoint("TOPLEFT", visibilityControls.bgOpacitySlider, "BOTTOMLEFT", 0, -20)
 visibilityControls.showIconsButton:SetPoint("TOPLEFT", visibilityControls.showTimeTextButton, "BOTTOMLEFT", 0, -10)
 
+-- Create advanced controls
+local advancedControls = {}
+
+-- Advanced header
+advancedControls.header = settingsFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+advancedControls.header:SetText("Advanced")
+advancedControls.header:SetPoint("TOPLEFT", visibilityControls.showIconsButton, "BOTTOMLEFT", 0, -20)
+
+-- Debug mode toggle
+advancedControls.debugButton = CreateFrame("CheckButton", nil, settingsFrame, "UICheckButtonTemplate")
+advancedControls.debugButton:SetPoint("TOPLEFT", advancedControls.header, "BOTTOMLEFT", 0, -10)
+advancedControls.debugButton:SetScript("OnClick", function(self)
+    LCT.debug = self:GetChecked()
+    -- Save to database
+    if not LoremCTDB then LoremCTDB = {} end
+    LoremCTDB.debug = LCT.debug
+    print("LoremCT: Debug mode", LCT.debug and "enabled" or "disabled")
+end)
+advancedControls.debugButton.text = advancedControls.debugButton:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+advancedControls.debugButton.text:SetPoint("LEFT", advancedControls.debugButton, "RIGHT", 0, 1)
+advancedControls.debugButton.text:SetText("Debug Mode")
+
+-- Scan spellbook button
+advancedControls.scanButton = CreateFrame("Button", nil, settingsFrame, "UIPanelButtonTemplate")
+advancedControls.scanButton:SetSize(120, 25)
+advancedControls.scanButton:SetPoint("TOPLEFT", advancedControls.debugButton, "BOTTOMLEFT", 0, -15)
+advancedControls.scanButton:SetText("Scan Spellbook")
+advancedControls.scanButton:SetScript("OnClick", function()
+    if LCT.spells and LCT.spells.ScanSpellBook then
+        LCT:Debug("Manual spell scan requested from settings UI")
+        LCT.spells.ScanSpellBook()
+        print("LoremCT: Rescanned spellbook")
+    else
+        print("LoremCT: Error - Could not scan spellbook")
+    end
+end)
+
 -- Function to update dimension controls
 function LCT.settings.UpdateDimensionControls()
     dimensionControls.lockButton:SetChecked(LCT.frame.locked)
@@ -220,6 +257,11 @@ function LCT.settings.UpdateVisibilityControls()
     visibilityControls.bgOpacityInput:SetText(math.floor(LCT.frame.bg:GetAlpha() * 100))
     visibilityControls.showTimeTextButton:SetChecked(LCT.visibility.showTimeText)
     visibilityControls.showIconsButton:SetChecked(LCT.visibility.showIcons)
+end
+
+-- Function to update advanced controls
+function LCT.settings.UpdateAdvancedControls()
+    advancedControls.debugButton:SetChecked(LCT.debug)
 end
 
 -- Create minimap icon
@@ -251,6 +293,14 @@ eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         LoadDimensionSettings()
         LCT.visibility.LoadSettings()
+        -- Load debug state
+        if LoremCTDB and LoremCTDB.debug ~= nil then
+            LCT.debug = LoremCTDB.debug
+        end
+        -- Update advanced controls
+        if LCT.settings.UpdateAdvancedControls then
+            LCT.settings.UpdateAdvancedControls()
+        end
     end
 end)
 
