@@ -26,8 +26,18 @@ function spells.ScanSpellBook()
             local spellName = GetSpellBookItemName(spellIndex, "player")
             
             if spellType == "SPELL" and spellID then
-                local cooldown = GetSpellBaseCooldown(spellID)
-                LCT:Debug("Found spell:", spellName, "ID:", spellID, "Cooldown:", cooldown and cooldown/1000 or "none")
+                -- Try GetSpellBaseCooldown first, fall back to checking actual cooldown
+                local cooldown = GetSpellBaseCooldown and GetSpellBaseCooldown(spellID)
+                
+                -- TBC PTR fallback: if GetSpellBaseCooldown returns nil, check actual cooldown
+                if not cooldown then
+                    local start, duration = GetSpellCooldown(spellID)
+                    if duration and duration > 0 then
+                        cooldown = duration * 1000 -- Convert to milliseconds
+                    end
+                end
+                
+                LCT:Debug("Found spell:", spellName, "ID:", spellID, "Cooldown:", cooldown and cooldown/1000 or "nil")
                 
                 -- Only track spells with cooldowns > 5s (filters GCD)
                 if cooldown and cooldown > 5000 then
@@ -60,24 +70,22 @@ function spells.Initialize()
     local eventFrame = CreateFrame("Frame")
     
     -- Register spell-related events
-    -- NOTE: SPELL_UPDATE_COOLDOWN is handled by cooldowns.lua, not here
     eventFrame:RegisterEvent("SPELLS_CHANGED")
-    eventFrame:RegisterEvent("LEARNED_SPELL_IN_TAB")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     
     -- Set up event handler
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         LCT:Debug("Spell event fired:", event)
-        if event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB" or event == "PLAYER_ENTERING_WORLD" then
-            LCT:Debug("Spell list changed or player entered world, rescanning...")
+        if event == "SPELLS_CHANGED" or event == "PLAYER_ENTERING_WORLD" then
+            LCT:Debug("Rescanning spellbook...")
             spells.ScanSpellBook()
         end
-        -- Removed: duplicate SPELL_UPDATE_COOLDOWN handler (handled by cooldowns.lua)
     end)
     
-    -- Initial scan
+    -- Perform initial scan
+    -- Using a small delay to ensure spellbook data is ready on TBC PTR
     C_Timer.After(2, function()
-        LCT:Debug("Performing initial spell scan")
+        LCT:Debug("Executing initial spell scan")
         spells.ScanSpellBook()
     end)
 end

@@ -85,59 +85,69 @@ LCT.animations.StartFinishAnimation = LCT.animations.StartFinishAnimation or fun
 LCT.animations.CancelAnimation = LCT.animations.CancelAnimation or function() end
 
 -- Register events for addon initialization
+-- Helper to ensure modules are initialized only once
+function LCT:EnsureInitialized()
+    if self.initialized then return end
+    
+    LCT:Debug("Initializing modules...")
+    
+    -- Initialize modules in correct order
+    if LCT.visibility then
+        LCT:Debug("Initializing visibility module")
+        LCT.visibility.Initialize()
+    else
+        LCT:Debug("ERROR - Visibility module not found")
+    end
+    
+    if LCT.cooldowns then
+        LCT:Debug("Initializing cooldowns module")
+        LCT.cooldowns.Initialize()
+    else
+        LCT:Debug("ERROR - Cooldowns module not found")
+    end
+    
+    if LCT.spells then
+        LCT:Debug("Initializing spells module")
+        LCT.spells.Initialize()
+    else
+        LCT:Debug("ERROR - Spells module not found")
+    end
+    
+    if LCT.items then
+        LCT:Debug("Initializing items module")
+        LCT.items.Initialize()
+    else
+        LCT:Debug("ERROR - Items module not found")
+    end
+    
+    if LCT.timeline then
+        LCT:Debug("Initializing timeline module")
+        LCT.timeline.Initialize()
+    else
+        LCT:Debug("ERROR - Timeline module not found")
+    end
+    
+    self.initialized = true
+    LCT:Debug("Frame shown status after module initialization:", frame:IsShown())
+end
+
+-- Register events for addon initialization
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Fallback for when ADDON_LOADED is unreliable (TBC PTR)
+
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
-        LCT:Debug("ADDON_LOADED - Initializing modules")
+        LCT:Debug("ADDON_LOADED fired - attempting initialization")
+        LCT:EnsureInitialized()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- This serves as a fail-safe backup for initialization
+        -- and also ensures visibility is correct
+        LCT:Debug("PLAYER_ENTERING_WORLD fired - attempting initialization")
+        LCT:EnsureInitialized()
         
-        -- Initialize modules in correct order
-        if LCT.visibility then
-            LCT:Debug("Initializing visibility module")
-            LCT.visibility.Initialize()
-        else
-            LCT:Debug("ERROR - Visibility module not found")
-        end
-        
-        if LCT.cooldowns then
-            LCT:Debug("Initializing cooldowns module")
-            LCT.cooldowns.Initialize()
-        else
-            LCT:Debug("ERROR - Cooldowns module not found")
-        end
-        
-        if LCT.spells then
-            LCT:Debug("Initializing spells module")
-            LCT.spells.Initialize()
-        else
-            LCT:Debug("ERROR - Spells module not found")
-        end
-        
-        if LCT.items then
-            LCT:Debug("Initializing items module")
-            LCT.items.Initialize()
-        else
-            LCT:Debug("ERROR - Items module not found")
-        end
-        
-        if LCT.timeline then
-            LCT:Debug("Initializing timeline module")
-            LCT.timeline.Initialize()
-        else
-            LCT:Debug("ERROR - Timeline module not found")
-        end
-        
-        LCT:Debug("Frame shown status after module initialization:", frame:IsShown())
-        
-        -- Force an initial spell scan
-        C_Timer.After(3, function()
-            if LCT.spells and LCT.spells.ScanSpellBook then
-                LCT:Debug("Performing delayed initial spell scan")
-                LCT.spells.ScanSpellBook()
-            else
-                LCT:Debug("ERROR - Could not perform initial spell scan, module not ready")
-            end
-        end)
+        -- Also let visibility module handle its specific logic if needed
+        -- (Though visibility module has its own event handler too)
     elseif event == "PLAYER_LOGIN" then
         LCT:Debug("PLAYER_LOGIN - Checking frame visibility")
         LCT:Debug("Frame shown status:", frame:IsShown())
