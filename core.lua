@@ -10,6 +10,128 @@ function LCT:Debug(...)
     end
 end
 
+-- Cross-client API compatibility & secret value protection
+local issecretvalue = _G.issecretvalue
+local function IsReadable(val)
+    return not (issecretvalue and issecretvalue(val))
+end
+
+LCT.compat = {
+    IsReadable = IsReadable,
+}
+
+function LCT.compat.GetSpellName(spellID)
+    if not spellID then return nil end
+    if C_Spell and C_Spell.GetSpellName then
+        local name = C_Spell.GetSpellName(spellID)
+        if IsReadable(name) and name and name ~= "" then return name end
+    end
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        if info and IsReadable(info.name) and info.name and info.name ~= "" then
+            return info.name
+        end
+    end
+    if _G.GetSpellInfo then
+        local name = _G.GetSpellInfo(spellID)
+        if IsReadable(name) and name and name ~= "" then return name end
+    end
+    return nil
+end
+
+function LCT.compat.GetSpellTexture(spellID)
+    if not spellID then return nil end
+    if C_Spell and C_Spell.GetSpellTexture then
+        local tex = C_Spell.GetSpellTexture(spellID)
+        if IsReadable(tex) and tex then return tex end
+    end
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        if info and IsReadable(info.iconID) and info.iconID then
+            return info.iconID
+        end
+    end
+    if _G.GetSpellTexture then
+        local tex = _G.GetSpellTexture(spellID)
+        if IsReadable(tex) and tex then return tex end
+    end
+    return nil
+end
+
+function LCT.compat.GetSpellBaseCooldown(spellID)
+    if not spellID then return nil end
+    if _G.GetSpellBaseCooldown then
+        local ok, cd = pcall(_G.GetSpellBaseCooldown, spellID)
+        if ok and IsReadable(cd) and type(cd) == "number" then return cd end
+    end
+    if C_Spell and C_Spell.GetSpellBaseCooldown then
+        local ok, cd = pcall(C_Spell.GetSpellBaseCooldown, spellID)
+        if ok and IsReadable(cd) and type(cd) == "number" then return cd end
+    end
+    return nil
+end
+
+function LCT.compat.GetSpellCooldown(spellID)
+    if not spellID then return nil, nil, nil, nil end
+    if _G.GetSpellCooldown then
+        local start, duration, enabled = _G.GetSpellCooldown(spellID)
+        if not IsReadable(start) or not IsReadable(duration) then
+            return nil, nil, nil, nil
+        end
+        local isEnabled = (enabled == 1 or enabled == true)
+        return start, duration, isEnabled, false
+    end
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local info = C_Spell.GetSpellCooldown(spellID)
+        if not info then return nil, nil, nil, nil end
+        local isOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
+        local enabled = IsReadable(info.isEnabled) and (info.isEnabled == true or info.isEnabled == 1) or false
+        local start = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
+        local duration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
+        
+        -- Fallback if start/duration are secret or missing during combat: try GetSpellCooldownDuration
+        if (not start or not duration) and C_Spell.GetSpellCooldownDuration then
+            local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
+            if durObj and durObj.GetRemainingDuration then
+                local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
+                if ok and IsReadable(rem) and type(rem) == "number" and rem > 0 then
+                    start = GetTime()
+                    duration = rem
+                    enabled = true
+                end
+            end
+        end
+        return start, duration, enabled, isOnGCD
+    end
+    return nil, nil, nil, nil
+end
+
+function LCT.compat.GetItemName(itemID)
+    if not itemID then return nil end
+    if C_Item and C_Item.GetItemNameByID then
+        local name = C_Item.GetItemNameByID(itemID)
+        if IsReadable(name) and name and name ~= "" then return name end
+    end
+    if _G.GetItemInfo then
+        local name = _G.GetItemInfo(itemID)
+        if IsReadable(name) and name and name ~= "" then return name end
+    end
+    return nil
+end
+
+function LCT.compat.GetItemIcon(itemID)
+    if not itemID then return nil end
+    if C_Item and C_Item.GetItemIconByID then
+        local icon = C_Item.GetItemIconByID(itemID)
+        if IsReadable(icon) and icon then return icon end
+    end
+    if _G.GetItemIcon then
+        local icon = _G.GetItemIcon(itemID)
+        if IsReadable(icon) and icon then return icon end
+    end
+    return nil
+end
+
 -- Set default options
 LCT.defaults = {
     -- Debug
@@ -92,13 +214,13 @@ function LCT:EnsureInitialized()
     LCT:Debug("Initializing modules...")
     
     -- Initialize modules in correct order
-    local modules = {"visibility", "cooldowns", "spells", "items", "timeline"}
+    local modules = {"visibility", "cooldowns", "spells", "items", "timeline", "settings"}
     for _, moduleName in ipairs(modules) do
-        if LCT[moduleName] then
+        if LCT[moduleName] and LCT[moduleName].Initialize then
             LCT:Debug("Initializing " .. moduleName .. " module")
             LCT[moduleName].Initialize()
         else
-            LCT:Debug("ERROR - " .. moduleName .. " module not found")
+            LCT:Debug("ERROR - " .. moduleName .. " module not found or missing Initialize")
         end
     end
     
@@ -109,20 +231,15 @@ end
 -- Register events for addon initialization
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Fallback for when ADDON_LOADED is unreliable (TBC PTR)
+frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Fallback for when ADDON_LOADED is unreliable
 
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         LCT:Debug("ADDON_LOADED fired - attempting initialization")
         LCT:EnsureInitialized()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- This serves as a fail-safe backup for initialization
-        -- and also ensures visibility is correct
         LCT:Debug("PLAYER_ENTERING_WORLD fired - attempting initialization")
         LCT:EnsureInitialized()
-        
-        -- Also let visibility module handle its specific logic if needed
-        -- (Though visibility module has its own event handler too)
     elseif event == "PLAYER_LOGIN" then
         LCT:Debug("PLAYER_LOGIN - Checking frame visibility")
         LCT:Debug("Frame shown status:", frame:IsShown())
@@ -146,9 +263,13 @@ SlashCmdList["LCT"] = function(msg)
         end
     elseif msg == "lock" then
         frame.locked = not frame.locked
-        -- When locked: disable mouse so clicks pass through
-        -- When unlocked: enable mouse for dragging
         frame:EnableMouse(not frame.locked)
+        if LCT.settings and LCT.settings.SaveDimensionSettings then
+            LCT.settings.SaveDimensionSettings()
+        end
+        if LCT.settings and LCT.settings.UpdateDimensionControls then
+            LCT.settings.UpdateDimensionControls()
+        end
         print("LoremCT: Frame " .. (frame.locked and "locked (click-through)" or "unlocked (draggable)"))
     elseif msg == "toggle" then
         if frame:IsVisible() then
@@ -173,4 +294,4 @@ SlashCmdList["LCT"] = function(msg)
             LCT.settingsFrame:Show()
         end
     end
-end 
+end

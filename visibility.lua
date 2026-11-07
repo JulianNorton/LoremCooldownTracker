@@ -10,7 +10,8 @@ LCT.visibility = {
     -- Function to update icon visibility
     UpdateIconVisibility = function(icon)
         if icon then
-            icon:SetShown(LCT.visibility.showIcons)
+            local showIcons = LCT.visibility.showIcons
+            icon:SetShown(showIcons)
             if icon.timeText then
                 icon.timeText:SetShown(LCT.visibility.showTimeText)
             end
@@ -19,10 +20,18 @@ LCT.visibility = {
     
     -- Function to update all icons visibility
     UpdateAllIconsVisibility = function()
-        -- Ensure activeCooldowns exists and is a table
         if type(LCT.activeCooldowns) == "table" then
-            for _, icon in pairs(LCT.activeCooldowns) do
-                LCT.visibility.UpdateIconVisibility(icon)
+            for key, icon in pairs(LCT.activeCooldowns) do
+                local isActive = (LCT.cooldowns and LCT.cooldowns.IsKeyActive and LCT.cooldowns.IsKeyActive(key))
+                    or (LCT.animations and LCT.animations.IsFinishing and LCT.animations.IsFinishing(icon))
+                if isActive then
+                    icon:SetShown(LCT.visibility.showIcons)
+                else
+                    icon:Hide()
+                end
+                if icon.timeText then
+                    icon.timeText:SetShown(LCT.visibility.showTimeText)
+                end
             end
         end
     end,
@@ -59,7 +68,7 @@ LCT.visibility = {
         
         -- Load settings with fallback to defaults
         local shown = settings.shown ~= nil and settings.shown or LCT.defaults.shown
-        local bgOpacity = settings.bgOpacity or LCT.defaults.bgOpacity
+        local bgOpacity = settings.bgOpacity ~= nil and settings.bgOpacity or LCT.defaults.bgOpacity
         local showTimeText = settings.showTimeText ~= nil and settings.showTimeText or LCT.defaults.showTimeText
         local showIcons = settings.showIcons ~= nil and settings.showIcons or LCT.defaults.showIcons
         
@@ -107,12 +116,10 @@ LCT.visibility = {
         LCT:Debug("Initializing visibility")
         -- Show frame by default
         LCT.frame:Show()
-        LCT:Debug("Frame shown status after Show():", LCT.frame:IsShown())
         -- Set initial background opacity
         LCT.frame.bg:SetAlpha(LCT.defaults.bgOpacity)
         -- Load saved settings if they exist
         LCT.visibility.LoadSettings()
-        LCT:Debug("Frame shown status after LoadSettings:", LCT.frame:IsShown())
     end
 }
 
@@ -121,13 +128,13 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
-        LCT:Debug("PLAYER_ENTERING_WORLD - Ensuring frame visibility")
         if LCT.visibility.shown then
             LCT.frame:Show()
-            LCT:Debug("Frame shown status after PLAYER_ENTERING_WORLD:", LCT.frame:IsShown())
         end
     end
 end)
+
+local isRefreshingVisibility = false
 
 -- Create visibility controls
 function LCT.visibility.CreateControls(parent)
@@ -145,21 +152,30 @@ function LCT.visibility.CreateControls(parent)
         else
             LCT.frame:Hide()
         end
-        LCT.visibility.SaveSettings()
+        if not isRefreshingVisibility then
+            LCT.visibility.SaveSettings()
+        end
     end)
     controls.showFrameButton.text = controls.showFrameButton:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     controls.showFrameButton.text:SetPoint("LEFT", controls.showFrameButton, "RIGHT", 0, 1)
     controls.showFrameButton.text:SetText("Show Timeline")
     
     -- Background Opacity Controls
-    controls.bgOpacitySlider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    local sliderName = "LoremCT_BGOpacitySlider"
+    controls.bgOpacitySlider = CreateFrame("Slider", sliderName, parent, "OptionsSliderTemplate")
     controls.bgOpacitySlider:SetMinMaxValues(0, 100)
     controls.bgOpacitySlider:SetValue(50)
     controls.bgOpacitySlider:SetValueStep(1)
-    controls.bgOpacitySlider:SetObeyStepOnDrag(true)
-    controls.bgOpacitySlider.Low:SetText("0%")
-    controls.bgOpacitySlider.High:SetText("100%")
-    controls.bgOpacitySlider.Text:SetText("Background Opacity")
+    if controls.bgOpacitySlider.SetObeyStepOnDrag then
+        controls.bgOpacitySlider:SetObeyStepOnDrag(true)
+    end
+    
+    local low = controls.bgOpacitySlider.Low or _G[sliderName .. "Low"]
+    local high = controls.bgOpacitySlider.High or _G[sliderName .. "High"]
+    local text = controls.bgOpacitySlider.Text or _G[sliderName .. "Text"]
+    if low then low:SetText("0%") end
+    if high then high:SetText("100%") end
+    if text then text:SetText("Background Opacity") end
     
     controls.bgOpacityInput = LCT.settings.CreateInputBox(parent, 50, "50")
     controls.bgOpacityInput:SetPoint("LEFT", controls.bgOpacitySlider, "RIGHT", 10, 0)
@@ -168,7 +184,9 @@ function LCT.visibility.CreateControls(parent)
         local opacity = value / 100
         LCT.frame.bg:SetAlpha(opacity)
         controls.bgOpacityInput:SetText(math.floor(value))
-        LCT.visibility.SaveSettings()
+        if not isRefreshingVisibility then
+            LCT.visibility.SaveSettings()
+        end
     end)
     
     controls.bgOpacityInput:SetScript("OnEnterPressed", function(self)
@@ -178,7 +196,9 @@ function LCT.visibility.CreateControls(parent)
             controls.bgOpacitySlider:SetValue(value)
             LCT.frame.bg:SetAlpha(value / 100)
             self:SetText(value)
-            LCT.visibility.SaveSettings()
+            if not isRefreshingVisibility then
+                LCT.visibility.SaveSettings()
+            end
         end
         self:ClearFocus()
     end)
@@ -188,7 +208,9 @@ function LCT.visibility.CreateControls(parent)
     controls.showTimeTextButton:SetScript("OnClick", function(self)
         LCT.visibility.showTimeText = self:GetChecked()
         LCT.visibility.UpdateAllIconsVisibility()
-        LCT.visibility.SaveSettings()
+        if not isRefreshingVisibility then
+            LCT.visibility.SaveSettings()
+        end
     end)
     controls.showTimeTextButton.text = controls.showTimeTextButton:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     controls.showTimeTextButton.text:SetPoint("LEFT", controls.showTimeTextButton, "RIGHT", 0, 1)
@@ -199,11 +221,18 @@ function LCT.visibility.CreateControls(parent)
     controls.showIconsButton:SetScript("OnClick", function(self)
         LCT.visibility.showIcons = self:GetChecked()
         LCT.visibility.UpdateAllIconsVisibility()
-        LCT.visibility.SaveSettings()
+        if not isRefreshingVisibility then
+            LCT.visibility.SaveSettings()
+        end
     end)
     controls.showIconsButton.text = controls.showIconsButton:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     controls.showIconsButton.text:SetPoint("LEFT", controls.showIconsButton, "RIGHT", 0, 1)
     controls.showIconsButton.text:SetText("Show Icons")
     
     return controls
-end 
+end
+
+-- Function called by settings to safely refresh visibility controls
+function LCT.visibility.SetRefreshing(refreshing)
+    isRefreshingVisibility = refreshing
+end
