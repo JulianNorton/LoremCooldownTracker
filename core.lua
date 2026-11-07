@@ -150,7 +150,7 @@ LCT.defaults = {
     showIcons = true,
     
     -- Timeline
-    maxTime = 300, -- 5 minutes
+    maxTime = 600, -- 10 minutes
     updateFrequency = 0.1 -- 10 times per second
 }
 

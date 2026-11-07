@@ -93,17 +93,33 @@ function timeline.UpdateMarkers()
     minuteText:SetTextColor(1, 1, 1, 0.3)
     minuteText:Show()
     
-    -- Update 5-minute marker (right)
-    local endMarker = GetMarker(5)
+    -- Update 5-minute marker
+    local fiveMinMarker = GetMarker(5)
+    fiveMinMarker:SetSize(1, frame:GetHeight() * 0.4)
+    fiveMinMarker:SetColorTexture(1, 1, 1, 0.25)
+    fiveMinMarker:ClearAllPoints()
+    fiveMinMarker:SetPoint("TOP", frame, "TOPLEFT", GetMarkerPosition(300), 0)
+    fiveMinMarker:Show()
+    
+    -- Update 5m text
+    local fiveMinText = GetText(2)
+    fiveMinText:SetText("5m")
+    fiveMinText:ClearAllPoints()
+    fiveMinText:SetPoint("BOTTOM", fiveMinMarker, "TOP", 0, 1)
+    fiveMinText:SetTextColor(1, 1, 1, 0.3)
+    fiveMinText:Show()
+    
+    -- Update 10-minute marker (right)
+    local endMarker = GetMarker(6)
     endMarker:SetSize(1, frame:GetHeight() * 0.5)
     endMarker:SetColorTexture(1, 1, 1, 0.3)
     endMarker:ClearAllPoints()
     endMarker:SetPoint("TOP", frame, "TOPLEFT", GetMarkerPosition(LCT.maxTime), 0)
     endMarker:Show()
     
-    -- Update 5m text
-    local endText = GetText(2)
-    endText:SetText("5m")
+    -- Update 10m text
+    local endText = GetText(4)
+    endText:SetText("10m")
     endText:ClearAllPoints()
     endText:SetPoint("BOTTOM", endMarker, "TOP", 0, 1)
     endText:SetTextColor(1, 1, 1, 0.3)
@@ -188,4 +204,4 @@ function timeline.Initialize()
 end
 
 -- Return the module
-return timeline 
+return timeline
