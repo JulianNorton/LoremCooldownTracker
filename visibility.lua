@@ -10,10 +10,17 @@ LCT.visibility = {
     -- Function to update icon visibility
     UpdateIconVisibility = function(icon)
         if icon then
-            local showIcons = LCT.visibility.showIcons
+            local showIcons = (LCT.visibility and LCT.visibility.showIcons ~= nil) and LCT.visibility.showIcons or LCT.showIcons
+            local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
             icon:SetShown(showIcons)
             if icon.timeText then
-                icon.timeText:SetShown(LCT.visibility.showTimeText)
+                icon.timeText:SetShown(showTimeText)
+            end
+            if icon.cooldown then
+                if icon.cooldown.SetHideCountdownNumbers then
+                    icon.cooldown:SetHideCountdownNumbers(true)
+                end
+                icon.cooldown.noCooldownCount = true
             end
         end
     end,
@@ -21,16 +28,24 @@ LCT.visibility = {
     -- Function to update all icons visibility
     UpdateAllIconsVisibility = function()
         if type(LCT.activeCooldowns) == "table" then
+            local showIcons = (LCT.visibility and LCT.visibility.showIcons ~= nil) and LCT.visibility.showIcons or LCT.showIcons
+            local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
             for key, icon in pairs(LCT.activeCooldowns) do
                 local isActive = (LCT.cooldowns and LCT.cooldowns.IsKeyActive and LCT.cooldowns.IsKeyActive(key))
                     or (LCT.animations and LCT.animations.IsFinishing and LCT.animations.IsFinishing(icon))
                 if isActive then
-                    icon:SetShown(LCT.visibility.showIcons)
+                    icon:SetShown(showIcons)
                 else
                     icon:Hide()
                 end
                 if icon.timeText then
-                    icon.timeText:SetShown(LCT.visibility.showTimeText)
+                    icon.timeText:SetShown(showTimeText)
+                end
+                if icon.cooldown then
+                    if icon.cooldown.SetHideCountdownNumbers then
+                        icon.cooldown:SetHideCountdownNumbers(true)
+                    end
+                    icon.cooldown.noCooldownCount = true
                 end
             end
         end
@@ -41,10 +56,10 @@ LCT.visibility = {
         if not LoremCTDB then LoremCTDB = {} end
         if not LoremCTDB.visibility then LoremCTDB.visibility = {} end
         
-        LoremCTDB.visibility.shown = LCT.frame:IsShown()
+        LoremCTDB.visibility.shown = not not LCT.frame:IsShown()
         LoremCTDB.visibility.bgOpacity = LCT.frame.bg:GetAlpha()
-        LoremCTDB.visibility.showTimeText = LCT.visibility.showTimeText
-        LoremCTDB.visibility.showIcons = LCT.visibility.showIcons
+        LoremCTDB.visibility.showTimeText = not not LCT.visibility.showTimeText
+        LoremCTDB.visibility.showIcons = not not LCT.visibility.showIcons
         
         -- Save frame position
         local point, relativeTo, relativePoint, xOfs, yOfs = LCT.frame:GetPoint()
@@ -55,7 +70,7 @@ LCT.visibility = {
             y = yOfs
         }
         
-        LCT:Debug("Saved visibility settings - shown:", LoremCTDB.visibility.shown, "pos:", xOfs, yOfs)
+        LCT:Debug("Saved visibility settings - shown:", LoremCTDB.visibility.shown, "timeText:", LoremCTDB.visibility.showTimeText, "pos:", xOfs, yOfs)
     end,
     
     -- Function to load visibility settings
@@ -72,13 +87,17 @@ LCT.visibility = {
         local showTimeText = settings.showTimeText ~= nil and settings.showTimeText or LCT.defaults.showTimeText
         local showIcons = settings.showIcons ~= nil and settings.showIcons or LCT.defaults.showIcons
         
-        LCT:Debug("Loaded shown value:", shown)
+        LCT:Debug("Loaded shown value:", shown, "showTimeText:", showTimeText)
         
         -- Apply settings
-        LCT.visibility.shown = shown
+        LCT.visibility.shown = not not shown
         LCT.visibility.bgOpacity = bgOpacity
-        LCT.visibility.showTimeText = showTimeText
-        LCT.visibility.showIcons = showIcons
+        LCT.visibility.showTimeText = not not showTimeText
+        LCT.visibility.showIcons = not not showIcons
+        
+        -- Keep LCT namespace synchronized
+        LCT.showTimeText = LCT.visibility.showTimeText
+        LCT.showIcons = LCT.visibility.showIcons
         
         -- Apply frame visibility
         if shown then
@@ -104,6 +123,11 @@ LCT.visibility = {
         
         -- Update all existing icons
         LCT.visibility.UpdateAllIconsVisibility()
+        
+        -- Update timeline marker texts
+        if LCT.timeline and LCT.timeline.UpdateMarkers then
+            LCT.timeline.UpdateMarkers()
+        end
         
         -- Update UI controls if they exist
         if LCT.settings and LCT.settings.UpdateVisibilityControls then
@@ -147,7 +171,8 @@ function LCT.visibility.CreateControls(parent)
     -- Show/Hide Frame Toggle
     controls.showFrameButton = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     controls.showFrameButton:SetScript("OnClick", function(self)
-        if self:GetChecked() then
+        local checked = not not self:GetChecked()
+        if checked then
             LCT.frame:Show()
         else
             LCT.frame:Hide()
@@ -206,8 +231,13 @@ function LCT.visibility.CreateControls(parent)
     -- Show/Hide Time Text Toggle
     controls.showTimeTextButton = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     controls.showTimeTextButton:SetScript("OnClick", function(self)
-        LCT.visibility.showTimeText = self:GetChecked()
+        local checked = not not self:GetChecked()
+        LCT.visibility.showTimeText = checked
+        LCT.showTimeText = checked
         LCT.visibility.UpdateAllIconsVisibility()
+        if LCT.timeline and LCT.timeline.UpdateMarkers then
+            LCT.timeline.UpdateMarkers()
+        end
         if not isRefreshingVisibility then
             LCT.visibility.SaveSettings()
         end
@@ -219,7 +249,9 @@ function LCT.visibility.CreateControls(parent)
     -- Show/Hide Icons Toggle
     controls.showIconsButton = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     controls.showIconsButton:SetScript("OnClick", function(self)
-        LCT.visibility.showIcons = self:GetChecked()
+        local checked = not not self:GetChecked()
+        LCT.visibility.showIcons = checked
+        LCT.showIcons = checked
         LCT.visibility.UpdateAllIconsVisibility()
         if not isRefreshingVisibility then
             LCT.visibility.SaveSettings()

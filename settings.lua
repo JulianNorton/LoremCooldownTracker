@@ -236,11 +236,11 @@ function LCT.settings.UpdateVisibilityControls()
     if LCT.visibility and LCT.visibility.SetRefreshing then
         LCT.visibility.SetRefreshing(true)
     end
-    visibilityControls.showFrameButton:SetChecked(LCT.frame:IsShown())
+    visibilityControls.showFrameButton:SetChecked(not not LCT.frame:IsShown())
     visibilityControls.bgOpacitySlider:SetValue(LCT.frame.bg:GetAlpha() * 100)
     visibilityControls.bgOpacityInput:SetText(math.floor(LCT.frame.bg:GetAlpha() * 100))
-    visibilityControls.showTimeTextButton:SetChecked(LCT.visibility.showTimeText)
-    visibilityControls.showIconsButton:SetChecked(LCT.visibility.showIcons)
+    visibilityControls.showTimeTextButton:SetChecked(not not LCT.visibility.showTimeText)
+    visibilityControls.showIconsButton:SetChecked(not not LCT.visibility.showIcons)
     if LCT.visibility and LCT.visibility.SetRefreshing then
         LCT.visibility.SetRefreshing(false)
     end

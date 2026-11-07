@@ -128,12 +128,17 @@ local function GetCooldownIcon(id, isItem)
         icon.cooldown:SetAllPoints()
         icon.cooldown:SetDrawEdge(false) 
         icon.cooldown:SetDrawSwipe(false)
+        if icon.cooldown.SetHideCountdownNumbers then
+            icon.cooldown:SetHideCountdownNumbers(true)
+        end
+        icon.cooldown.noCooldownCount = true
         
         -- Create time text
         icon.timeText = icon:CreateFontString(nil, "OVERLAY")
         icon.timeText:SetFontObject("GameFontNormalSmall")
         icon.timeText:SetPoint("BOTTOM", icon, "BOTTOM", 0, 2)
         local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
+        if showTimeText == nil then showTimeText = true end
         icon.timeText:SetShown(showTimeText)
         
         activeCooldowns[key] = icon
@@ -144,6 +149,20 @@ local function GetCooldownIcon(id, isItem)
             local currentTex = GetInventoryItemTexture("player", id)
             if currentTex then
                 activeCooldowns[key].texture:SetTexture(currentTex)
+            end
+        end
+        local existingIcon = activeCooldowns[key]
+        if existingIcon then
+            if existingIcon.cooldown then
+                if existingIcon.cooldown.SetHideCountdownNumbers then
+                    existingIcon.cooldown:SetHideCountdownNumbers(true)
+                end
+                existingIcon.cooldown.noCooldownCount = true
+            end
+            if existingIcon.timeText then
+                local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
+                if showTimeText == nil then showTimeText = true end
+                existingIcon.timeText:SetShown(showTimeText)
             end
         end
     end
@@ -344,7 +363,11 @@ function cooldowns.UpdateCooldown(id, isItem)
              UpdateIconPosition(key, activeCooldownList[key], currentTime)
              
              if icon.cooldown then
-                icon.cooldown:SetCooldown(start, duration)
+                 if icon.cooldown.SetHideCountdownNumbers then
+                     icon.cooldown:SetHideCountdownNumbers(true)
+                 end
+                 icon.cooldown.noCooldownCount = true
+                 icon.cooldown:SetCooldown(start, duration)
              end
              
              cooldowns.StartUpdating()

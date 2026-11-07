@@ -45,6 +45,9 @@ function timeline.UpdateMarkers()
         return scale * (width - iconSize) + (iconSize/2)
     end
     
+    local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
+    if showTimeText == nil then showTimeText = true end
+    
     -- Update 0-second marker (left)
     local startMarker = GetMarker(1)
     startMarker:SetSize(1, frame:GetHeight() * 0.5)
@@ -67,7 +70,7 @@ function timeline.UpdateMarkers()
     tenSecText:ClearAllPoints()
     tenSecText:SetPoint("BOTTOM", tenSecMarker, "TOP", 0, 1)
     tenSecText:SetTextColor(1, 1, 1, 0.3)
-    tenSecText:Show()
+    tenSecText:SetShown(showTimeText)
     
     -- Update 30-second marker
     local halfMinMarker = GetMarker(3)
@@ -91,7 +94,7 @@ function timeline.UpdateMarkers()
     minuteText:ClearAllPoints()
     minuteText:SetPoint("BOTTOM", minuteMarker, "TOP", 0, 1)
     minuteText:SetTextColor(1, 1, 1, 0.3)
-    minuteText:Show()
+    minuteText:SetShown(showTimeText)
     
     -- Update 5-minute marker
     local fiveMinMarker = GetMarker(5)
@@ -107,7 +110,7 @@ function timeline.UpdateMarkers()
     fiveMinText:ClearAllPoints()
     fiveMinText:SetPoint("BOTTOM", fiveMinMarker, "TOP", 0, 1)
     fiveMinText:SetTextColor(1, 1, 1, 0.3)
-    fiveMinText:Show()
+    fiveMinText:SetShown(showTimeText)
     
     -- Update 10-minute marker (right)
     local endMarker = GetMarker(6)
@@ -123,7 +126,7 @@ function timeline.UpdateMarkers()
     endText:ClearAllPoints()
     endText:SetPoint("BOTTOM", endMarker, "TOP", 0, 1)
     endText:SetTextColor(1, 1, 1, 0.3)
-    endText:Show()
+    endText:SetShown(showTimeText)
     
     LCT:Debug("Updated timeline markers")
 end
