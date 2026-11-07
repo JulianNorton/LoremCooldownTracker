@@ -83,15 +83,16 @@ function LCT.compat.GetSpellCooldown(spellID)
             local duration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
             local isOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
             
-            -- Fallback if start/duration are secret or missing during combat: try GetSpellCooldownDuration
-            if (not start or not duration) and C_Spell.GetSpellCooldownDuration then
+            -- If duration is missing, or is only reporting GCD (<= 5s), check non-GCD duration
+            if (not start or not duration or duration <= 5 or isOnGCD) and C_Spell.GetSpellCooldownDuration then
                 local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
                 if durObj and durObj.GetRemainingDuration then
                     local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
-                    if ok and IsReadable(rem) and type(rem) == "number" and rem > 0 then
+                    if ok and IsReadable(rem) and type(rem) == "number" and rem > 5 then
                         start = GetTime()
                         duration = rem
                         enabled = true
+                        isOnGCD = false
                     end
                 end
             end

@@ -317,7 +317,9 @@ function cooldowns.UpdateCooldown(id, isItem)
             duration = 0
         end
         
-        if not start or not enabled or (start == 0 and duration == 0) then
+        local isCooldownActive = (start and start > 0 and duration and duration > 5)
+        
+        if not isCooldownActive and (not start or not enabled or (start == 0 and duration == 0)) then
             -- Cooldown cleared
             if activeCooldownList[key] then
                 local icon = activeCooldowns[key]
@@ -502,6 +504,12 @@ function cooldowns.Initialize()
                 end
                 
                 C_Timer.After(0.05, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
+                C_Timer.After(0.15, function()
                     cooldowns.UpdateCooldown(effectiveID, false)
                     if spellID ~= effectiveID then
                         cooldowns.UpdateCooldown(spellID, false)
