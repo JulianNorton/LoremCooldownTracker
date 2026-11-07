@@ -312,9 +312,30 @@ function cooldowns.UpdateCooldown(id, isItem)
     else
         local isOnGCD
         start, duration, enabled, isOnGCD = LCT.compat.GetSpellCooldown(id)
-        if isOnGCD and (not duration or duration <= 5) then
-            start = 0
-            duration = 0
+        
+        -- In modern WoW / 16001, querying a spell while GCD is active returns the GCD (<= 5s)
+        -- with isOnGCD = true (or false if GCD flag is masked in combat).
+        local isGCD = (isOnGCD == true) or (duration and duration > 0 and duration <= 5)
+        
+        if isGCD or (not duration or duration == 0) then
+            -- If this spell already has an active cooldown in our tracker, DO NOT clear it!
+            -- Momentary GCDs and unreadable combat frames must preserve the running timer.
+            if activeCooldownList[key] then
+                local existing = activeCooldownList[key]
+                local currentTime = GetTime()
+                local remaining = (existing.start + existing.duration) - currentTime
+                if remaining > 0 then
+                    start = existing.start
+                    duration = existing.duration
+                    enabled = 1
+                else
+                    start = 0
+                    duration = 0
+                end
+            else
+                start = 0
+                duration = 0
+            end
         end
         
         local isCooldownActive = (start and start > 0 and duration and duration > 5)
@@ -476,13 +497,15 @@ function cooldowns.Initialize()
     cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     cooldownEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     cooldownEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    cooldownEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     
     cooldownEventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "SPELL_UPDATE_COOLDOWN" or 
            event == "ACTIONBAR_UPDATE_COOLDOWN" or
            event == "BAG_UPDATE_COOLDOWN" or
            event == "PLAYER_ENTERING_WORLD" or
-           event == "PLAYER_REGEN_ENABLED" then
+           event == "PLAYER_REGEN_ENABLED" or
+           event == "PLAYER_REGEN_DISABLED" then
             cooldowns.UpdateAll()
         elseif event == "ITEM_LOCK_CHANGED" then
             local bagOrSlot, slot = ...
@@ -499,6 +522,34 @@ function cooldowns.Initialize()
                 end
                 if spellID ~= effectiveID and not trackedSpells[spellID] then
                     cooldowns.RegisterSpell(spellID)
+                end
+                
+                -- Check if this spell has a known base cooldown > 5s
+                local baseCD = LCT.compat.GetSpellBaseCooldown(effectiveID) or (spellID ~= effectiveID and LCT.compat.GetSpellBaseCooldown(spellID))
+                local baseSeconds = (baseCD and type(baseCD) == "number" and baseCD > 5000) and (baseCD / 1000) or nil
+                
+                -- Check cooldown from API
+                local s, d = LCT.compat.GetSpellCooldown(effectiveID)
+                if (not s or not d or d <= 5) and baseSeconds then
+                    -- API is currently masked by GCD (1.5s), but the player just cast this cooldown ability!
+                    -- Pre-populate activeCooldownList with base cooldown so GCD doesn't suppress it
+                    local key = GetCooldownKey(effectiveID, false)
+                    activeCooldownList[key] = {
+                        id = effectiveID,
+                        start = GetTime(),
+                        duration = baseSeconds,
+                        isItem = false,
+                    }
+                    local icon = GetCooldownIcon(effectiveID, false)
+                    if icon then
+                        UpdateIconPosition(key, activeCooldownList[key], GetTime())
+                        if icon.cooldown then
+                            if icon.cooldown.SetHideCountdownNumbers then icon.cooldown:SetHideCountdownNumbers(true) end
+                            icon.cooldown.noCooldownCount = true
+                            icon.cooldown:SetCooldown(GetTime(), baseSeconds)
+                        end
+                        cooldowns.StartUpdating()
+                    end
                 end
                 
                 -- Update immediately and with staged retries to catch the cooldown write
@@ -520,6 +571,12 @@ function cooldowns.Initialize()
                     end
                 end)
                 C_Timer.After(0.35, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
+                C_Timer.After(0.75, function()
                     cooldowns.UpdateCooldown(effectiveID, false)
                     if spellID ~= effectiveID then
                         cooldowns.UpdateCooldown(spellID, false)

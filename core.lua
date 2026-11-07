@@ -88,19 +88,30 @@ function LCT.compat.GetSpellCooldown(spellID)
             -- If duration is missing, or is only reporting GCD (<= 5s), check non-GCD duration
             if (not cStart or not cDuration or cDuration <= 5 or cIsOnGCD) and C_Spell.GetSpellCooldownDuration then
                 local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
-                if durObj and durObj.GetRemainingDuration then
-                    local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
-                    if ok and IsReadable(rem) and type(rem) == "number" and rem > 5 then
-                        cStart = GetTime()
-                        cDuration = rem
-                        cEnabled = true
-                        cIsOnGCD = false
+                if durObj then
+                    if durObj.GetRemainingDuration then
+                        local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
+                        if ok and IsReadable(rem) and type(rem) == "number" and rem > 5 then
+                            cStart = GetTime()
+                            cDuration = rem
+                            cEnabled = true
+                            cIsOnGCD = false
+                        end
+                    end
+                    if (not cDuration or cDuration <= 5) and durObj.GetTotalDuration then
+                        local ok, tot = pcall(durObj.GetTotalDuration, durObj)
+                        if ok and IsReadable(tot) and type(tot) == "number" and tot > 5 then
+                            cStart = GetTime()
+                            cDuration = tot
+                            cEnabled = true
+                            cIsOnGCD = false
+                        end
                     end
                 end
             end
             
             -- If we have a genuine non-GCD cooldown (> 5s), return it immediately
-            if cStart and cDuration and cDuration > 5 and not cIsOnGCD then
+            if cStart and cDuration and cDuration > 5 then
                 return cStart, cDuration, cEnabled, false
             end
         end
