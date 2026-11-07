@@ -92,39 +92,14 @@ function LCT:EnsureInitialized()
     LCT:Debug("Initializing modules...")
     
     -- Initialize modules in correct order
-    if LCT.visibility then
-        LCT:Debug("Initializing visibility module")
-        LCT.visibility.Initialize()
-    else
-        LCT:Debug("ERROR - Visibility module not found")
-    end
-    
-    if LCT.cooldowns then
-        LCT:Debug("Initializing cooldowns module")
-        LCT.cooldowns.Initialize()
-    else
-        LCT:Debug("ERROR - Cooldowns module not found")
-    end
-    
-    if LCT.spells then
-        LCT:Debug("Initializing spells module")
-        LCT.spells.Initialize()
-    else
-        LCT:Debug("ERROR - Spells module not found")
-    end
-    
-    if LCT.items then
-        LCT:Debug("Initializing items module")
-        LCT.items.Initialize()
-    else
-        LCT:Debug("ERROR - Items module not found")
-    end
-    
-    if LCT.timeline then
-        LCT:Debug("Initializing timeline module")
-        LCT.timeline.Initialize()
-    else
-        LCT:Debug("ERROR - Timeline module not found")
+    local modules = {"visibility", "cooldowns", "spells", "items", "timeline"}
+    for _, moduleName in ipairs(modules) do
+        if LCT[moduleName] then
+            LCT:Debug("Initializing " .. moduleName .. " module")
+            LCT[moduleName].Initialize()
+        else
+            LCT:Debug("ERROR - " .. moduleName .. " module not found")
+        end
     end
     
     self.initialized = true

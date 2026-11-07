@@ -57,6 +57,39 @@ function LCT.settings.CreateInputBox(parent, width, initialValue)
     return box
 end
 
+-- Helper function to create slider with input box
+function LCT.settings.CreateSliderControl(parent, label, min, max, initialValue, callback)
+    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    slider:SetMinMaxValues(min, max)
+    slider:SetValue(initialValue)
+    slider:SetValueStep(1)
+    slider:SetObeyStepOnDrag(true)
+    slider.Low:SetText(min)
+    slider.High:SetText(max)
+    slider.Text:SetText(label)
+
+    local input = LCT.settings.CreateInputBox(parent, 50, tostring(initialValue))
+    input:SetPoint("LEFT", slider, "RIGHT", 10, 0)
+
+    slider:SetScript("OnValueChanged", function(self, value)
+        input:SetText(math.floor(value))
+        callback(value)
+    end)
+
+    input:SetScript("OnEnterPressed", function(self)
+        local value = tonumber(self:GetText())
+        if value then
+            value = math.max(min, math.min(max, value))
+            slider:SetValue(value)
+            self:SetText(value)
+            callback(value)
+        end
+        self:ClearFocus()
+    end)
+
+    return slider, input
+end
+
 -- Create settings frame
 local settingsFrame = CreateFrame("Frame", "LoremCTSettings", UIParent, "BasicFrameTemplateWithInset")
 settingsFrame:SetSize(300, 600)
@@ -87,102 +120,27 @@ dimensionControls.lockButton.text:SetPoint("LEFT", dimensionControls.lockButton,
 dimensionControls.lockButton.text:SetText("Lock Frame")
 
 -- Bar Width Controls
-dimensionControls.barWidthSlider = CreateFrame("Slider", nil, settingsFrame, "OptionsSliderTemplate")
-dimensionControls.barWidthSlider:SetPoint("TOPLEFT", dimensionControls.lockButton, "BOTTOMLEFT", 0, -30)
-dimensionControls.barWidthSlider:SetMinMaxValues(100, 1000)
-dimensionControls.barWidthSlider:SetValue(300)
-dimensionControls.barWidthSlider:SetValueStep(1)
-dimensionControls.barWidthSlider:SetObeyStepOnDrag(true)
-dimensionControls.barWidthSlider.Low:SetText("100")
-dimensionControls.barWidthSlider.High:SetText("1000")
-dimensionControls.barWidthSlider.Text:SetText("Bar Width")
-
-dimensionControls.barWidthInput = LCT.settings.CreateInputBox(settingsFrame, 50, "300")
-dimensionControls.barWidthInput:SetPoint("LEFT", dimensionControls.barWidthSlider, "RIGHT", 10, 0)
-
-dimensionControls.barWidthSlider:SetScript("OnValueChanged", function(self, value)
-    LCT.frame:SetWidth(value)
-    dimensionControls.barWidthInput:SetText(math.floor(value))
-    SaveDimensionSettings()
-end)
-
-dimensionControls.barWidthInput:SetScript("OnEnterPressed", function(self)
-    local value = tonumber(self:GetText())
-    if value then
-        value = math.max(100, math.min(1000, value))
-        dimensionControls.barWidthSlider:SetValue(value)
+dimensionControls.barWidthSlider, dimensionControls.barWidthInput = LCT.settings.CreateSliderControl(
+    settingsFrame, "Bar Width", 100, 1000, 300, function(value)
         LCT.frame:SetWidth(value)
-        self:SetText(value)
         SaveDimensionSettings()
     end
-    self:ClearFocus()
-end)
+)
+dimensionControls.barWidthSlider:SetPoint("TOPLEFT", dimensionControls.lockButton, "BOTTOMLEFT", 0, -30)
 
 -- Bar Height Controls
-dimensionControls.barHeightSlider = CreateFrame("Slider", nil, settingsFrame, "OptionsSliderTemplate")
-dimensionControls.barHeightSlider:SetPoint("TOPLEFT", dimensionControls.barWidthSlider, "BOTTOMLEFT", 0, -30)
-dimensionControls.barHeightSlider:SetMinMaxValues(10, 100)
-dimensionControls.barHeightSlider:SetValue(30)
-dimensionControls.barHeightSlider:SetValueStep(1)
-dimensionControls.barHeightSlider:SetObeyStepOnDrag(true)
-dimensionControls.barHeightSlider.Low:SetText("10")
-dimensionControls.barHeightSlider.High:SetText("100")
-dimensionControls.barHeightSlider.Text:SetText("Bar Height")
-
-dimensionControls.barHeightInput = LCT.settings.CreateInputBox(settingsFrame, 50, "30")
-dimensionControls.barHeightInput:SetPoint("LEFT", dimensionControls.barHeightSlider, "RIGHT", 10, 0)
-
-dimensionControls.barHeightSlider:SetScript("OnValueChanged", function(self, value)
-    LCT.frame:SetHeight(value)
-    dimensionControls.barHeightInput:SetText(math.floor(value))
-    SaveDimensionSettings()
-end)
-
-dimensionControls.barHeightInput:SetScript("OnEnterPressed", function(self)
-    local value = tonumber(self:GetText())
-    if value then
-        value = math.max(10, math.min(100, value))
-        dimensionControls.barHeightSlider:SetValue(value)
+dimensionControls.barHeightSlider, dimensionControls.barHeightInput = LCT.settings.CreateSliderControl(
+    settingsFrame, "Bar Height", 10, 100, 30, function(value)
         LCT.frame:SetHeight(value)
-        self:SetText(value)
         SaveDimensionSettings()
     end
-    self:ClearFocus()
-end)
+)
+dimensionControls.barHeightSlider:SetPoint("TOPLEFT", dimensionControls.barWidthSlider, "BOTTOMLEFT", 0, -30)
 
 -- Icon Size Controls
-dimensionControls.iconSizeSlider = CreateFrame("Slider", nil, settingsFrame, "OptionsSliderTemplate")
-dimensionControls.iconSizeSlider:SetPoint("TOPLEFT", dimensionControls.barHeightSlider, "BOTTOMLEFT", 0, -30)
-dimensionControls.iconSizeSlider:SetMinMaxValues(8, 64)
-dimensionControls.iconSizeSlider:SetValue(24)
-dimensionControls.iconSizeSlider:SetValueStep(1)
-dimensionControls.iconSizeSlider:SetObeyStepOnDrag(true)
-dimensionControls.iconSizeSlider.Low:SetText("8")
-dimensionControls.iconSizeSlider.High:SetText("64")
-dimensionControls.iconSizeSlider.Text:SetText("Icon Size")
-
-dimensionControls.iconSizeInput = LCT.settings.CreateInputBox(settingsFrame, 50, "24")
-dimensionControls.iconSizeInput:SetPoint("LEFT", dimensionControls.iconSizeSlider, "RIGHT", 10, 0)
-
-dimensionControls.iconSizeSlider:SetScript("OnValueChanged", function(self, value)
-    LCT.iconSize = value
-    dimensionControls.iconSizeInput:SetText(math.floor(value))
-    -- Update existing cooldown icons
-    if LCT.activeCooldowns then
-        for _, icon in pairs(LCT.activeCooldowns) do
-            icon:SetSize(value, value)
-        end
-    end
-    SaveDimensionSettings()
-end)
-
-dimensionControls.iconSizeInput:SetScript("OnEnterPressed", function(self)
-    local value = tonumber(self:GetText())
-    if value then
-        value = math.max(8, math.min(64, value))
-        dimensionControls.iconSizeSlider:SetValue(value)
+dimensionControls.iconSizeSlider, dimensionControls.iconSizeInput = LCT.settings.CreateSliderControl(
+    settingsFrame, "Icon Size", 8, 64, 24, function(value)
         LCT.iconSize = value
-        self:SetText(value)
         -- Update existing cooldown icons
         if LCT.activeCooldowns then
             for _, icon in pairs(LCT.activeCooldowns) do
@@ -191,8 +149,8 @@ dimensionControls.iconSizeInput:SetScript("OnEnterPressed", function(self)
         end
         SaveDimensionSettings()
     end
-    self:ClearFocus()
-end)
+)
+dimensionControls.iconSizeSlider:SetPoint("TOPLEFT", dimensionControls.barHeightSlider, "BOTTOMLEFT", 0, -30)
 
 -- Create visibility controls
 local visibilityControls = LCT.visibility.CreateControls(settingsFrame)
