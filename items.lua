@@ -10,7 +10,6 @@ local GetContainerItemInfo = (C_Container and C_Container.GetContainerItemInfo) 
 
 -- Other globals
 local GetInventoryItemID = GetInventoryItemID
-local GetItemInfo = GetItemInfo
 local pairs = pairs
 local ipairs = ipairs
 
@@ -20,40 +19,28 @@ LCT.items = items
 
 -- Constants
 -- All equipment slots that could have cooldowns (1-19)
--- 1=Head, 2=Neck, 3=Shoulder, 4=Shirt, 5=Chest, 6=Waist, 7=Legs, 8=Feet
--- 9=Wrist, 10=Hands, 11=Finger1, 12=Finger2, 13=Trinket1, 14=Trinket2
--- 15=Back(Cloak), 16=MainHand, 17=OffHand, 18=Ranged, 19=Tabard
 local EQUIPMENT_SLOTS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
 local MIN_COOLDOWN_DURATION = 5  -- Only track cooldowns > 5 seconds
 local BAG_SCAN_THROTTLE = 0.5    -- Minimum seconds between bag scans
 
 -- Bag item tracking
-local trackedBagItems = {}       -- [itemID] = { bagID, slotID, start, duration }
+local trackedBagItems = {}       -- [itemID] = true
 local lastBagScanTime = 0        -- Throttle bag scanning
 
 -- Function to clean up unequipped items
 local function CleanupEquippedItems()
-    -- Ensure cooldowns module and trackedItems exist
     if not LCT.cooldowns or not LCT.cooldowns.trackedItems then
         LCT:Debug("ERROR - Cannot cleanup equipped items, cooldowns module not initialized")
         return
     end
 
-    -- Unregister any tracked items that aren't in our equipment slots list
-    -- Note: negative IDs are bag items, positive IDs 1-19 are equipment slots
+    -- Unregister any positive slot IDs that no longer have an item equipped
     for slotID in pairs(LCT.cooldowns.trackedItems) do
-        -- Only clean up positive slot IDs (equipped items), not negative (bag items)
         if slotID > 0 then
-            local found = false
-            for _, equipSlot in ipairs(EQUIPMENT_SLOTS) do
-                if slotID == equipSlot then
-                    found = true
-                    break
-                end
-            end
-            if not found then
+            local currentItemID = GetInventoryItemID("player", slotID)
+            if not currentItemID then
                 LCT.cooldowns.UnregisterItem(slotID)
-                LCT:Debug("Cleaned up old equipment slot:", slotID)
+                LCT:Debug("Cleaned up unequipped slot:", slotID)
             end
         end
     end
@@ -61,7 +48,6 @@ end
 
 -- Function to check equipment slots and register them for tracking
 local function UpdateEquippedItems()
-    -- Ensure cooldowns module exists
     if not LCT.cooldowns or not LCT.cooldowns.RegisterItem then
         LCT:Debug("ERROR - Cannot update equipped items, cooldowns module not initialized")
         return
@@ -76,8 +62,13 @@ local function UpdateEquippedItems()
         if itemID then
             -- Register the slot number for cooldown tracking
             LCT.cooldowns.RegisterItem(slot)
-            local itemName = GetItemInfo(itemID)
+            local itemName = LCT.compat.GetItemName(itemID)
             LCT:Debug("Registered equipped item in slot", slot, ":", itemName, "(ID:", itemID, ")")
+            
+            -- If cooldown module is active, update cooldown check
+            if LCT.cooldowns.UpdateCooldown then
+                LCT.cooldowns.UpdateCooldown(slot, true)
+            end
         end
     end
 end
@@ -86,15 +77,16 @@ end
 local function RegisterBagItem(itemID)
     if not LCT.cooldowns then return end
     
-    -- Use negative itemID to differentiate from equipped item slots
-    -- This avoids collision with trinket slots (13, 14)
     local trackingKey = -itemID
     
     if not trackedBagItems[itemID] then
         trackedBagItems[itemID] = true
         LCT.cooldowns.RegisterItem(trackingKey)
-        local itemName = GetItemInfo(itemID)
+        local itemName = LCT.compat.GetItemName(itemID)
         LCT:Debug("Registered bag item for tracking:", itemName, "(ID:", itemID, ")")
+        if LCT.cooldowns.UpdateCooldown then
+            LCT.cooldowns.UpdateCooldown(trackingKey, true)
+        end
     end
 end
 
@@ -107,7 +99,7 @@ local function UnregisterBagItem(itemID)
     if trackedBagItems[itemID] then
         trackedBagItems[itemID] = nil
         LCT.cooldowns.UnregisterItem(trackingKey)
-        local itemName = GetItemInfo(itemID)
+        local itemName = LCT.compat.GetItemName(itemID)
         LCT:Debug("Unregistered bag item:", itemName, "(ID:", itemID, ")")
     end
 end
@@ -134,19 +126,24 @@ local function ScanBagItemCooldowns()
     for bagID = 0, 4 do
         local numSlots = GetContainerNumSlots(bagID)
         
-        for slotID = 1, numSlots do
-            local start, duration, enable = GetContainerItemCooldown(bagID, slotID)
-            
-            -- Check if item has an active cooldown > 5 seconds
-            if start and start > 0 and duration and duration > MIN_COOLDOWN_DURATION and enable == 1 then
-                local itemID = GetContainerItemID(bagID, slotID)
+        if numSlots and numSlots > 0 then
+            for slotID = 1, numSlots do
+                local start, duration, enable = GetContainerItemCooldown(bagID, slotID)
                 
-                if itemID then
-                    foundItems[itemID] = true
-                    
-                    -- Register if not already tracked
-                    if not trackedBagItems[itemID] then
-                        RegisterBagItem(itemID)
+                if LCT.compat.IsReadable(start) and LCT.compat.IsReadable(duration) and LCT.compat.IsReadable(enable) then
+                    local isEnabled = (enable == 1 or enable == true)
+                    -- Check if item has an active cooldown > 5 seconds
+                    if start and start > 0 and duration and duration > MIN_COOLDOWN_DURATION and isEnabled then
+                        local itemID = GetContainerItemID(bagID, slotID)
+                        
+                        if itemID then
+                            foundItems[itemID] = true
+                            
+                            -- Register if not already tracked
+                            if not trackedBagItems[itemID] then
+                                RegisterBagItem(itemID)
+                            end
+                        end
                     end
                 end
             end
@@ -157,7 +154,6 @@ local function ScanBagItemCooldowns()
     for itemID in pairs(trackedBagItems) do
         if not foundItems[itemID] then
             -- Check if it's currently on cooldown before removing
-            -- Bag items use negative itemID for tracking key
             local isActive = false
             if LCT.cooldowns and LCT.cooldowns.HasActiveCooldown then
                 isActive = LCT.cooldowns.HasActiveCooldown(-itemID, true)
@@ -199,8 +195,7 @@ function items.Initialize()
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
             local slot = ...
-            -- Update for any equipment slot (1-19)
-            if slot >= 1 and slot <= 19 then
+            if slot and slot >= 1 and slot <= 19 then
                 LCT:Debug("Equipment slot changed:", slot)
                 UpdateEquippedItems()
             end
@@ -211,12 +206,9 @@ function items.Initialize()
                 UpdateEquippedItems()
             end
         elseif event == "BAG_UPDATE_COOLDOWN" then
-            -- Performance: This event fires when ANY bag item cooldown changes
-            -- Our scan function is throttled internally
             ScanBagItemCooldowns()
         elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
             LCT:Debug("Player entered world/logged in")
-            -- Delay the check slightly to ensure all systems are ready
             C_Timer.After(0.5, function()
                 UpdateEquippedItems()
                 ScanBagItemCooldowns()
@@ -224,13 +216,12 @@ function items.Initialize()
         end
     end)
     
-    -- Do initial checks with a longer delay
-    C_Timer.After(2, function()
+    -- Initial checks with a short delay
+    C_Timer.After(1.5, function()
         LCT:Debug("Performing initial item check")
         UpdateEquippedItems()
         ScanBagItemCooldowns()
     end)
 end
 
--- Return the module
-return items 
+return items

@@ -14,7 +14,6 @@ local C_Container = C_Container
 local GetContainerNumSlots = (C_Container and C_Container.GetContainerNumSlots) or _G.GetContainerNumSlots
 local GetContainerItemID = (C_Container and C_Container.GetContainerItemID) or _G.GetContainerItemID
 local GetContainerItemCooldown = (C_Container and C_Container.GetContainerItemCooldown) or _G.GetContainerItemCooldown
-local GetItemIcon = GetItemIcon
 
 -- Pre-formatted time strings
 local FORMAT_MINUTES = "%.0fm"
@@ -39,6 +38,7 @@ local updateElapsed = 0
 -- Make tables accessible to other modules
 LCT.activeCooldowns = activeCooldowns
 LCT.cooldowns.trackedItems = trackedItems  -- Expose trackedItems table
+LCT.cooldowns.activeCooldownList = activeCooldownList
 
 -- Helper: Check if an ID is a bag item (negative = bag item)
 local function IsBagItem(id)
@@ -55,11 +55,16 @@ end
 local function GetBagItemCooldown(itemID)
     for bagID = 0, 4 do
         local numSlots = GetContainerNumSlots(bagID)
-        for slotID = 1, numSlots do
-            local bagItemID = GetContainerItemID(bagID, slotID)
-            if bagItemID == itemID then
-                local start, duration, enable = GetContainerItemCooldown(bagID, slotID)
-                return start, duration, enable
+        if numSlots and numSlots > 0 then
+            for slotID = 1, numSlots do
+                local bagItemID = GetContainerItemID(bagID, slotID)
+                if bagItemID == itemID then
+                    local start, duration, enable = GetContainerItemCooldown(bagID, slotID)
+                    if LCT.compat.IsReadable(start) and LCT.compat.IsReadable(duration) and LCT.compat.IsReadable(enable) then
+                        local isEnabled = (enable == 1 or enable == true)
+                        return start, duration, isEnabled and 1 or 0
+                    end
+                end
             end
         end
     end
@@ -82,6 +87,11 @@ local function FormatTimeText(remaining)
     end
 end
 
+-- Function to check if a cooldown key is currently active
+function cooldowns.IsKeyActive(key)
+    return activeCooldownList[key] ~= nil
+end
+
 -- Function to create or get cooldown icon
 local function GetCooldownIcon(id, isItem)
     local key = GetCooldownKey(id, isItem)
@@ -97,15 +107,13 @@ local function GetCooldownIcon(id, isItem)
         local texture
         if isItem then
             if IsBagItem(id) then
-                -- Bag item: use actual itemID to get icon
                 local actualItemID = GetActualItemID(id)
-                texture = GetItemIcon(actualItemID)
+                texture = LCT.compat.GetItemIcon(actualItemID)
             else
-                -- Equipped item: get texture from inventory slot
                 texture = GetInventoryItemTexture("player", id)
             end
         else
-            texture = GetSpellTexture(id)
+            texture = LCT.compat.GetSpellTexture(id)
         end
         
         if not texture then
@@ -120,15 +128,43 @@ local function GetCooldownIcon(id, isItem)
         icon.cooldown:SetAllPoints()
         icon.cooldown:SetDrawEdge(false) 
         icon.cooldown:SetDrawSwipe(false)
+        if icon.cooldown.SetHideCountdownNumbers then
+            icon.cooldown:SetHideCountdownNumbers(true)
+        end
+        icon.cooldown.noCooldownCount = true
         
         -- Create time text
         icon.timeText = icon:CreateFontString(nil, "OVERLAY")
         icon.timeText:SetFontObject("GameFontNormalSmall")
         icon.timeText:SetPoint("BOTTOM", icon, "BOTTOM", 0, 2)
-        icon.timeText:SetShown(LCT.showTimeText)
+        local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
+        if showTimeText == nil then showTimeText = true end
+        icon.timeText:SetShown(showTimeText)
         
         activeCooldowns[key] = icon
         LCT:Debug("Created new icon for", isItem and "item slot" or "spell", id, "key:", key)
+    else
+        -- If equipped item, refresh texture in case item changed
+        if isItem and not IsBagItem(id) then
+            local currentTex = GetInventoryItemTexture("player", id)
+            if currentTex then
+                activeCooldowns[key].texture:SetTexture(currentTex)
+            end
+        end
+        local existingIcon = activeCooldowns[key]
+        if existingIcon then
+            if existingIcon.cooldown then
+                if existingIcon.cooldown.SetHideCountdownNumbers then
+                    existingIcon.cooldown:SetHideCountdownNumbers(true)
+                end
+                existingIcon.cooldown.noCooldownCount = true
+            end
+            if existingIcon.timeText then
+                local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
+                if showTimeText == nil then showTimeText = true end
+                existingIcon.timeText:SetShown(showTimeText)
+            end
+        end
     end
     
     return activeCooldowns[key]
@@ -165,13 +201,19 @@ local function UpdateIconPosition(key, info, currentTime)
     icon:ClearAllPoints()
     icon:SetPoint("CENTER", LCT.frame, "LEFT", xPos, 0)
     
-    -- Z-index
+    -- Z-index (clamped safely)
     local baseLevel = LCT.frame:GetFrameLevel() + 1
-    local zIndex = baseLevel + floor(LCT.maxTime - effectiveRemaining)
-    icon:SetFrameLevel(zIndex)
+    local offset = floor((LCT.maxTime - effectiveRemaining) / 3)
+    icon:SetFrameLevel(math.max(1, baseLevel + offset))
     
-    icon:Show()
-    icon.timeText:SetText(FormatTimeText(remaining))
+    local showIcons = (LCT.visibility and LCT.visibility.showIcons ~= nil) and LCT.visibility.showIcons or LCT.showIcons
+    icon:SetShown(showIcons)
+    
+    local showTimeText = (LCT.visibility and LCT.visibility.showTimeText ~= nil) and LCT.visibility.showTimeText or LCT.showTimeText
+    if icon.timeText then
+        icon.timeText:SetShown(showTimeText)
+        icon.timeText:SetText(FormatTimeText(remaining))
+    end
     
     return true -- Keep in active list
 end
@@ -254,7 +296,11 @@ function cooldowns.UpdateCooldown(id, isItem)
             end
         else
             start, duration, enabled = GetInventoryItemCooldown("player", id)
-            if not start or not duration then return end
+            if not LCT.compat.IsReadable(start) or not LCT.compat.IsReadable(duration) or not LCT.compat.IsReadable(enabled) then
+                return
+            end
+            local isEnabled = (enabled == 1 or enabled == true)
+            enabled = isEnabled and 1 or 0
         end
         
         if (start == 0 and duration == 0) or enabled == 0 then
@@ -264,14 +310,61 @@ function cooldowns.UpdateCooldown(id, isItem)
             return
         end
     else
-        start, duration, enabled = GetSpellCooldown(id)
-        if not start or enabled == 0 then return end
+        local isOnGCD
+        start, duration, enabled, isOnGCD = LCT.compat.GetSpellCooldown(id)
+        
+        -- In modern WoW / 16001, querying a spell while GCD is active returns the GCD (<= 5s)
+        -- with isOnGCD = true (or false if GCD flag is masked in combat).
+        local isGCD = (isOnGCD == true) or (duration and duration > 0 and duration <= 5)
+        
+        if isGCD or (not duration or duration == 0) then
+            -- If this spell already has an active cooldown in our tracker, DO NOT clear it!
+            -- Momentary GCDs and unreadable combat frames must preserve the running timer.
+            if activeCooldownList[key] then
+                local existing = activeCooldownList[key]
+                local currentTime = GetTime()
+                local remaining = (existing.start + existing.duration) - currentTime
+                if remaining > 0 then
+                    start = existing.start
+                    duration = existing.duration
+                    enabled = 1
+                else
+                    start = 0
+                    duration = 0
+                end
+            else
+                start = 0
+                duration = 0
+            end
+        end
+        
+        local isCooldownActive = (start and start > 0 and duration and duration > 5)
+        
+        if not isCooldownActive and (not start or not enabled or (start == 0 and duration == 0)) then
+            -- Cooldown cleared
+            if activeCooldownList[key] then
+                local icon = activeCooldowns[key]
+                if icon and icon:IsVisible() then
+                    if LCT.animations and LCT.animations.StartFinishAnimation then
+                        LCT.animations.StartFinishAnimation(icon)
+                    else
+                        icon:Hide()
+                    end
+                else
+                    if icon then icon:Hide() end
+                end
+                activeCooldownList[key] = nil
+            else
+                if activeCooldowns[key] then activeCooldowns[key]:Hide() end
+            end
+            return
+        end
     end
     
     local icon = GetCooldownIcon(id, isItem)
     if not icon then return end
     
-    if start > 0 and duration > 5 then -- Only track cooldowns longer than five seconds
+    if start and duration and start > 0 and duration > 5 then -- Only track cooldowns longer than five seconds
         -- Add/Update to active cooldown list
         activeCooldownList[key] = {
             id = id,
@@ -284,11 +377,20 @@ function cooldowns.UpdateCooldown(id, isItem)
         local remaining = (start + duration) - currentTime
         
         if remaining > 0 then
+             -- Cancel any in-progress finish animation so it doesn't hide restarted cooldown
+             if LCT.animations and LCT.animations.CancelAnimation then
+                 LCT.animations.CancelAnimation(icon)
+             end
+             
              -- Force initial update
              UpdateIconPosition(key, activeCooldownList[key], currentTime)
              
              if icon.cooldown then
-                icon.cooldown:SetCooldown(start, duration)
+                 if icon.cooldown.SetHideCountdownNumbers then
+                     icon.cooldown:SetHideCountdownNumbers(true)
+                 end
+                 icon.cooldown.noCooldownCount = true
+                 icon.cooldown:SetCooldown(start, duration)
              end
              
              cooldowns.StartUpdating()
@@ -296,15 +398,15 @@ function cooldowns.UpdateCooldown(id, isItem)
     else
         -- Cooldown finished or too short
         if activeCooldownList[key] then
-            local icon = activeCooldowns[key]
-            if icon and icon:IsVisible() then
+            local prevIcon = activeCooldowns[key]
+            if prevIcon and prevIcon:IsVisible() then
                  if LCT.animations and LCT.animations.StartFinishAnimation then
-                     LCT.animations.StartFinishAnimation(icon)
+                     LCT.animations.StartFinishAnimation(prevIcon)
                  else
-                     icon:Hide()
+                     prevIcon:Hide()
                  end
             else
-                 activeCooldowns[key]:Hide()
+                 if prevIcon then prevIcon:Hide() end
             end
             activeCooldownList[key] = nil
         else
@@ -312,6 +414,7 @@ function cooldowns.UpdateCooldown(id, isItem)
         end
     end
 end
+
 function cooldowns.UpdateAll()
     for spellID in pairs(trackedSpells) do
         cooldowns.UpdateCooldown(spellID, false)
@@ -331,7 +434,7 @@ end
 function cooldowns.RegisterSpell(spellID)
     if not spellID then return end
     trackedSpells[spellID] = true
-    local name = GetSpellInfo(spellID)
+    local name = LCT.compat.GetSpellName(spellID)
     LCT:Debug("Registered spell:", spellID, name)
 end
 
@@ -342,7 +445,6 @@ function cooldowns.UnregisterSpell(spellID)
     local key = GetCooldownKey(spellID, false)
     if activeCooldowns[key] then
         local icon = activeCooldowns[key]
-        -- Don't hide if animation is finishing
         local isFinishing = LCT.animations and LCT.animations.IsFinishing and LCT.animations.IsFinishing(icon)
         
         if not isFinishing then
@@ -359,7 +461,7 @@ end
 function cooldowns.RegisterItem(itemID)
     if not itemID then return end
     trackedItems[itemID] = true
-    local name = GetItemInfo(itemID)
+    local name = LCT.compat.GetItemName(GetActualItemID(itemID))
     LCT:Debug("Registered item:", itemID, name)
 end
 
@@ -370,7 +472,6 @@ function cooldowns.UnregisterItem(itemID)
     local key = GetCooldownKey(itemID, true)
     if activeCooldowns[key] then
         local icon = activeCooldowns[key]
-        -- Don't hide if animation is finishing
         local isFinishing = LCT.animations and LCT.animations.IsFinishing and LCT.animations.IsFinishing(icon)
         
         if not isFinishing then
@@ -394,35 +495,104 @@ function cooldowns.Initialize()
     cooldownEventFrame:RegisterEvent("ITEM_LOCK_CHANGED")
     cooldownEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
     cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-    
-    -- Performance: OnUpdate is NOT set here - it only activates when cooldowns are tracked
-    -- This is controlled by StartUpdating() / StopUpdating()
+    cooldownEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    cooldownEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    cooldownEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     
     cooldownEventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "SPELL_UPDATE_COOLDOWN" or 
            event == "ACTIONBAR_UPDATE_COOLDOWN" or
-           event == "BAG_UPDATE_COOLDOWN" then
+           event == "BAG_UPDATE_COOLDOWN" or
+           event == "PLAYER_ENTERING_WORLD" or
+           event == "PLAYER_REGEN_ENABLED" or
+           event == "PLAYER_REGEN_DISABLED" then
             cooldowns.UpdateAll()
         elseif event == "ITEM_LOCK_CHANGED" then
             local bagOrSlot, slot = ...
-            -- If it's an equipped item (slot is nil)
-            if not slot and bagOrSlot >= 13 and bagOrSlot <= 14 then
+            if not slot and bagOrSlot and bagOrSlot >= 1 and bagOrSlot <= 19 then
                 cooldowns.UpdateCooldown(bagOrSlot, true)
             end
         elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
             local unit, _, spellID = ...
-            if unit == "player" and trackedSpells[spellID] then
-                -- Force an immediate update for this spell
-                cooldowns.UpdateCooldown(spellID, false)
+            if unit == "player" and spellID and LCT.compat.IsReadable(spellID) then
+                local effectiveID = (LCT.spells and LCT.spells.GetCanonicalSpellID and LCT.spells.GetCanonicalSpellID(spellID)) or spellID
+                
+                if not trackedSpells[effectiveID] then
+                    cooldowns.RegisterSpell(effectiveID)
+                end
+                if spellID ~= effectiveID and not trackedSpells[spellID] then
+                    cooldowns.RegisterSpell(spellID)
+                end
+                
+                -- Check if this spell has a known base cooldown > 5s
+                local baseCD = LCT.compat.GetSpellBaseCooldown(effectiveID) or (spellID ~= effectiveID and LCT.compat.GetSpellBaseCooldown(spellID))
+                local baseSeconds = (baseCD and type(baseCD) == "number" and baseCD > 5000) and (baseCD / 1000) or nil
+                
+                -- Check cooldown from API
+                local s, d = LCT.compat.GetSpellCooldown(effectiveID)
+                if (not s or not d or d <= 5) and baseSeconds then
+                    -- API is currently masked by GCD (1.5s), but the player just cast this cooldown ability!
+                    -- Pre-populate activeCooldownList with base cooldown so GCD doesn't suppress it
+                    local key = GetCooldownKey(effectiveID, false)
+                    activeCooldownList[key] = {
+                        id = effectiveID,
+                        start = GetTime(),
+                        duration = baseSeconds,
+                        isItem = false,
+                    }
+                    local icon = GetCooldownIcon(effectiveID, false)
+                    if icon then
+                        UpdateIconPosition(key, activeCooldownList[key], GetTime())
+                        if icon.cooldown then
+                            if icon.cooldown.SetHideCountdownNumbers then icon.cooldown:SetHideCountdownNumbers(true) end
+                            icon.cooldown.noCooldownCount = true
+                            icon.cooldown:SetCooldown(GetTime(), baseSeconds)
+                        end
+                        cooldowns.StartUpdating()
+                    end
+                end
+                
+                -- Update immediately and with staged retries to catch the cooldown write
+                cooldowns.UpdateCooldown(effectiveID, false)
+                if spellID ~= effectiveID then
+                    cooldowns.UpdateCooldown(spellID, false)
+                end
+                
+                C_Timer.After(0.05, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
+                C_Timer.After(0.15, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
+                C_Timer.After(0.35, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
+                C_Timer.After(0.75, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
             end
         end
     end)
     
-    -- Initial check after a short delay
+    -- Staged checks on startup
+    cooldowns.UpdateAll()
     C_Timer.After(0.5, cooldowns.UpdateAll)
+    C_Timer.After(1.5, cooldowns.UpdateAll)
+    C_Timer.After(3.0, cooldowns.UpdateAll)
     
     LCT:Debug("Cooldown tracking initialized (OnUpdate disabled until cooldowns active)")
 end
 
--- Return the module
-return cooldowns 
+return cooldowns

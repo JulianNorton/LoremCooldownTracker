@@ -56,8 +56,16 @@ local PERF_CONFIG = {
 
 -- Performance Benchmarking
 local function GetTime()
-    -- Just use WoW's GetTime() directly, it's reliable enough for our tests
     return _G.GetTime()
+end
+
+local function SafeGetMemoryUsage()
+    if UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
+        pcall(UpdateAddOnMemoryUsage)
+        local ok, mem = pcall(GetAddOnMemoryUsage, addonName)
+        if ok and type(mem) == "number" then return mem end
+    end
+    return 0
 end
 
 -- Create a mock frame for testing animations
@@ -83,20 +91,15 @@ local function CreateMockIcon()
     end
 
     -- Create the icon frame with version-aware template
-    local frame
-    if WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
-        -- In Classic Era, we need to use the template
-        frame = CreateFrame("Frame", "LoremCTTestIcon", LCT.frame, "BackdropTemplate")
-        if frame.SetBackdrop then -- Check if SetBackdrop is available
-            frame:SetBackdrop({
-                bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                tile = true, tileSize = 16, edgeSize = 16,
-                insets = { left = 4, right = 4, top = 4, bottom = 4 }
-            })
-        end
-    else
-        frame = CreateFrame("Frame", "LoremCTTestIcon", LCT.frame, "BackdropTemplate")
+    local template = BackdropTemplateMixin and "BackdropTemplate" or nil
+    local frame = CreateFrame("Frame", "LoremCTTestIcon", LCT.frame, template)
+    if frame.SetBackdrop then
+        frame:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
     end
     
     -- Set size and initial position
@@ -138,8 +141,7 @@ function tests:BenchmarkOperation(operationFunc, maxDuration)
     maxDuration = maxDuration or 0.5 -- Reduced to 0.5 second test window
     local startTime = GetTime()
     local iterations = 0
-    UpdateAddOnMemoryUsage()
-    local totalMemoryStart = GetAddOnMemoryUsage(addonName)
+    local totalMemoryStart = SafeGetMemoryUsage()
     
     -- Run as many operations as we can in the time window
     while (GetTime() - startTime) < maxDuration do
@@ -153,8 +155,7 @@ function tests:BenchmarkOperation(operationFunc, maxDuration)
     end
     
     local endTime = GetTime()
-    UpdateAddOnMemoryUsage()
-    local totalMemoryEnd = GetAddOnMemoryUsage(addonName)
+    local totalMemoryEnd = SafeGetMemoryUsage()
     
     local timeElapsed = endTime - startTime
     local memoryUsed = totalMemoryEnd - totalMemoryStart
@@ -357,9 +358,9 @@ function tests:RunPerformanceTests()
     print("Testing operations per second over 0.5-second windows...")
     
     -- Test configuration
-    local TEST_BATCH_SIZE = 5  -- Number of operations per OnUpdate
-    local TOTAL_OPERATIONS = 50  -- Total operations to perform per test
-    local TICK_INTERVAL = 0.05  -- Increase tick interval for better stability
+    local TEST_BATCH_SIZE = 5
+    local TOTAL_OPERATIONS = 50
+    local TICK_INTERVAL = 0.05
     
     -- Test state
     local state = {
@@ -368,20 +369,17 @@ function tests:RunPerformanceTests()
         startTime = nil,
         memoryStart = nil,
         mockIcon = nil,
-        ticker = nil -- Store ticker reference
+        ticker = nil
     }
     
     -- Create test frame
     local testFrame = CreateFrame("Frame")
     testFrame:Hide()
     
-    -- Pre-declare functions so they're in scope
     local StartTest, FinishTest
     
     function FinishTest()
-        print("FinishTest called for test", state.currentTest)
         if state.ticker then
-            print("Cancelling ticker")
             state.ticker:Cancel()
             state.ticker = nil
         end
@@ -389,12 +387,9 @@ function tests:RunPerformanceTests()
         if state.operationsCompleted > 0 then
             local endTime = GetTime()
             local timeElapsed = endTime - state.startTime
-            print(string.format("Test completed with %d operations in %.2f seconds", state.operationsCompleted, timeElapsed))
-            UpdateAddOnMemoryUsage()
-            local memoryUsed = GetAddOnMemoryUsage(addonName) - state.memoryStart
+            local memoryUsed = SafeGetMemoryUsage() - state.memoryStart
             local opsPerSecond = state.operationsCompleted / timeElapsed
             
-            -- Print results based on current test
             if state.currentTest == 1 then
                 print("\nTimeline Update Test:")
                 print(string.format("  Time: %.2f seconds", timeElapsed))
@@ -406,7 +401,6 @@ function tests:RunPerformanceTests()
                     "|cFFFF0000Concerning|r"
                 ))
                 
-                -- Start next test after a delay
                 state.currentTest = 2
                 C_Timer.After(0.5, StartTest)
                 
@@ -421,7 +415,6 @@ function tests:RunPerformanceTests()
                     "|cFFFF0000Concerning|r"
                 ))
                 
-                -- Start next test after a delay
                 state.currentTest = 3
                 state.mockIcon = CreateMockIcon()
                 C_Timer.After(0.5, StartTest)
@@ -437,13 +430,11 @@ function tests:RunPerformanceTests()
                     "|cFFFF0000Concerning|r"
                 ))
                 
-                -- Clean up
                 if state.mockIcon and state.mockIcon.frame then
                     state.mockIcon.frame:Hide()
                     state.mockIcon.frame:SetParent(nil)
                 end
                 
-                -- Print summary
                 print("\n=== Performance Summary ===")
                 print("Timeline Update: Good >= 50 ops/sec")
                 print("Cooldown Update: Good >= 25 ops/sec")
@@ -454,7 +445,6 @@ function tests:RunPerformanceTests()
                 collectgarbage("collect")
             end
         else
-            -- Handle case where test was skipped
             if state.currentTest == 1 then
                 print("\nTimeline Update Test: SKIPPED - Timeline module not available")
                 state.currentTest = 2
@@ -475,126 +465,90 @@ function tests:RunPerformanceTests()
     end
     
     function StartTest()
-        print(string.format("\nStarting test %d...", state.currentTest))
         state.operationsCompleted = 0
         state.startTime = GetTime()
-        UpdateAddOnMemoryUsage()
-        state.memoryStart = GetAddOnMemoryUsage(addonName)
+        state.memoryStart = SafeGetMemoryUsage()
         
-        -- Check if required module exists before starting test
         local canRunTest = false
         if state.currentTest == 1 then
-            print("Checking timeline module...")
             canRunTest = LCT.timeline and LCT.timeline.UpdateMarkers
-            print("Timeline module available:", canRunTest and "yes" or "no")
         elseif state.currentTest == 2 then
-            print("Checking cooldowns module...")
             canRunTest = LCT.cooldowns and LCT.cooldowns.UpdateAll
-            print("Cooldowns module available:", canRunTest and "yes" or "no")
         elseif state.currentTest == 3 then
-            print("Checking animations module...")
-            -- Create mock icon before checking animation module
             if state.mockIcon then
                 state.mockIcon.frame:Hide()
                 state.mockIcon.frame:SetParent(nil)
             end
             state.mockIcon = CreateMockIcon()
             canRunTest = LCT.animations and LCT.animations.StartPositionAnimation and state.mockIcon and state.mockIcon.frame
-            print("Animations module available:", canRunTest and "yes" or "no")
         end
         
         if not canRunTest then
-            print("Module not available, skipping test", state.currentTest)
-            FinishTest() -- Skip to next test
+            FinishTest()
             return
         end
         
-        print("Starting ticker for test", state.currentTest)
-        print(string.format("Will run %d operations in batches of %d", TOTAL_OPERATIONS, TEST_BATCH_SIZE))
-        
-        -- Use C_Timer for better Classic compatibility
         state.ticker = C_Timer.NewTicker(TICK_INTERVAL, function()
-            -- Check if we're done before doing any operations
             if state.operationsCompleted >= TOTAL_OPERATIONS then 
-                print("Operations complete for test", state.currentTest)
                 state.ticker:Cancel()
                 FinishTest()
                 return
             end
             
-            -- For animation test, verify mock icon is still valid
             if state.currentTest == 3 and (not state.mockIcon or not state.mockIcon.frame) then
-                print("Mock icon became invalid, recreating...")
                 state.mockIcon = CreateMockIcon()
                 if not state.mockIcon or not state.mockIcon.frame then
-                    print("Failed to recreate mock icon, stopping test")
                     state.ticker:Cancel()
                     FinishTest()
                     return
                 end
             end
             
-            -- Perform a batch of operations
             for i = 1, TEST_BATCH_SIZE do
                 if state.operationsCompleted >= TOTAL_OPERATIONS then break end
                 
                 if state.currentTest == 1 then
-                    -- Timeline Update Test
                     if LCT.timeline and LCT.timeline.UpdateMarkers then
                         LCT.timeline.UpdateMarkers()
                     end
                 elseif state.currentTest == 2 then
-                    -- Cooldown Update Test
                     if LCT.cooldowns and LCT.cooldowns.UpdateAll then
                         LCT.cooldowns.UpdateAll()
                     end
                 elseif state.currentTest == 3 then
-                    -- Animation System Test
                     if LCT.animations and state.mockIcon then
-                        -- Verify frame is still valid
                         if not state.mockIcon:isValid() then
-                            print("Frame became invalid, recreating...")
                             state.mockIcon = CreateMockIcon()
                             if not state.mockIcon or not state.mockIcon:isValid() then
-                                print("Failed to recreate mock icon, stopping test")
                                 state.ticker:Cancel()
                                 FinishTest()
                                 return
                             end
                         end
                         
-                        -- Ensure frame has a valid point before animation
                         local frame = state.mockIcon.frame
                         if not frame:GetPoint() then
-                            print("Frame lost its point, resetting...")
                             frame:ClearAllPoints()
                             frame:SetPoint("CENTER", LCT.frame, "LEFT", 0, 0)
                             if not frame:GetPoint() then
-                                print("Failed to set frame point, stopping test")
                                 state.ticker:Cancel()
                                 FinishTest()
                                 return
                             end
                         end
                         
-                        -- Use smaller movements for testing to reduce strain
                         LCT.animations.StartPositionAnimation(state.mockIcon.frame, 50, 5)
                     end
                 end
                 
                 state.operationsCompleted = state.operationsCompleted + 1
-                if state.operationsCompleted % TEST_BATCH_SIZE == 0 then
-                    print(string.format("Completed %d/%d operations", state.operationsCompleted, TOTAL_OPERATIONS))
-                end
             end
-        end)  -- Remove TOTAL_TICKS limit, we'll control it via operationsCompleted
+        end)
     end
     
-    -- Start the first test
     StartTest()
 end
 
--- Add performance test slash command
 SLASH_LCTPERF1 = "/lctperf"
 SlashCmdList["LCTPERF"] = function(msg)
     print("LoremCT: Starting performance tests...")
@@ -606,7 +560,6 @@ SlashCmdList["LCTPERF"] = function(msg)
     end
 end
 
--- Add slash command for testing
 SLASH_LCTTEST1 = "/lcttest"
 SlashCmdList["LCTTEST"] = function(msg)
     print("LoremCT: Running tests...")
@@ -616,4 +569,4 @@ SlashCmdList["LCTTEST"] = function(msg)
     if not success then
         print("LoremCT Test ERROR: " .. tostring(err))
     end
-end 
+end
