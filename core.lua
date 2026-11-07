@@ -73,36 +73,44 @@ end
 
 function LCT.compat.GetSpellCooldown(spellID)
     if not spellID then return nil, nil, nil, nil end
-    if _G.GetSpellCooldown then
-        local start, duration, enabled = _G.GetSpellCooldown(spellID)
-        if not IsReadable(start) or not IsReadable(duration) then
-            return nil, nil, nil, nil
-        end
-        local isEnabled = (enabled == 1 or enabled == true)
-        return start, duration, isEnabled, false
-    end
+    
+    -- Try modern C_Spell.GetSpellCooldown first (Forever 16001 / Modern)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellID)
-        if not info then return nil, nil, nil, nil end
-        local isOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
-        local enabled = IsReadable(info.isEnabled) and (info.isEnabled == true or info.isEnabled == 1) or false
-        local start = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
-        local duration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
-        
-        -- Fallback if start/duration are secret or missing during combat: try GetSpellCooldownDuration
-        if (not start or not duration) and C_Spell.GetSpellCooldownDuration then
-            local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
-            if durObj and durObj.GetRemainingDuration then
-                local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
-                if ok and IsReadable(rem) and type(rem) == "number" and rem > 0 then
-                    start = GetTime()
-                    duration = rem
-                    enabled = true
+        if info then
+            local enabled = IsReadable(info.isEnabled) and (info.isEnabled == true or info.isEnabled == 1) or false
+            local start = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
+            local duration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
+            local isOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
+            
+            -- Fallback if start/duration are secret or missing during combat: try GetSpellCooldownDuration
+            if (not start or not duration) and C_Spell.GetSpellCooldownDuration then
+                local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
+                if durObj and durObj.GetRemainingDuration then
+                    local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
+                    if ok and IsReadable(rem) and type(rem) == "number" and rem > 0 then
+                        start = GetTime()
+                        duration = rem
+                        enabled = true
+                    end
                 end
             end
+            
+            if start and duration then
+                return start, duration, enabled, isOnGCD
+            end
         end
-        return start, duration, enabled, isOnGCD
     end
+    
+    -- Legacy fallback: _G.GetSpellCooldown
+    if _G.GetSpellCooldown then
+        local start, duration, enabled = _G.GetSpellCooldown(spellID)
+        if IsReadable(start) and IsReadable(duration) and type(start) == "number" and type(duration) == "number" then
+            local isEnabled = (enabled == 1 or enabled == true)
+            return start, duration, isEnabled, false
+        end
+    end
+    
     return nil, nil, nil, nil
 end
 

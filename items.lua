@@ -84,6 +84,9 @@ local function RegisterBagItem(itemID)
         LCT.cooldowns.RegisterItem(trackingKey)
         local itemName = LCT.compat.GetItemName(itemID)
         LCT:Debug("Registered bag item for tracking:", itemName, "(ID:", itemID, ")")
+        if LCT.cooldowns.UpdateCooldown then
+            LCT.cooldowns.UpdateCooldown(trackingKey, true)
+        end
     end
 end
 

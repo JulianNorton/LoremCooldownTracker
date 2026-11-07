@@ -312,7 +312,7 @@ function cooldowns.UpdateCooldown(id, isItem)
     else
         local isOnGCD
         start, duration, enabled, isOnGCD = LCT.compat.GetSpellCooldown(id)
-        if isOnGCD then
+        if isOnGCD and (not duration or duration <= 5) then
             start = 0
             duration = 0
         end
@@ -488,16 +488,23 @@ function cooldowns.Initialize()
             if unit == "player" and spellID and LCT.compat.IsReadable(spellID) then
                 local effectiveID = (LCT.spells and LCT.spells.GetCanonicalSpellID and LCT.spells.GetCanonicalSpellID(spellID)) or spellID
                 
-                -- Check immediately and after a short 0.05s delay to let client write cooldown
+                if not trackedSpells[effectiveID] then
+                    cooldowns.RegisterSpell(effectiveID)
+                end
+                if spellID ~= effectiveID and not trackedSpells[spellID] then
+                    cooldowns.RegisterSpell(spellID)
+                end
+                
+                -- Update immediately and again after 0.05s to ensure cooldown write is caught
+                cooldowns.UpdateCooldown(effectiveID, false)
+                if spellID ~= effectiveID then
+                    cooldowns.UpdateCooldown(spellID, false)
+                end
+                
                 C_Timer.After(0.05, function()
-                    if not trackedSpells[effectiveID] then
-                        local start, duration, enabled, isOnGCD = LCT.compat.GetSpellCooldown(effectiveID)
-                        if start and start > 0 and duration and duration > 5 and enabled and not isOnGCD then
-                            cooldowns.RegisterSpell(effectiveID)
-                        end
-                    end
-                    if trackedSpells[effectiveID] then
-                        cooldowns.UpdateCooldown(effectiveID, false)
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
                     end
                 end)
             end

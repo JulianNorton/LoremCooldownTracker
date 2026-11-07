@@ -98,25 +98,12 @@ function spells.ScanSpellBook()
         local spellName = best.name
         nameToCanonical[nameLower] = spellID
 
-        -- Check base cooldown
-        local cooldown = LCT.compat.GetSpellBaseCooldown(spellID)
-        if not cooldown or cooldown <= 0 then
-            local start, duration, enabled, isOnGCD = LCT.compat.GetSpellCooldown(spellID)
-            if duration and duration > 0 and not isOnGCD then
-                cooldown = duration * 1000
-            end
-        end
-
-        LCT:Debug("Spell candidate:", spellName, "ID:", spellID, "Cooldown:", cooldown and (cooldown/1000) or "nil")
-
-        -- Only track cooldowns > 5s (filters GCD)
-        if cooldown and cooldown > 5000 then
-            newCanonicalSpells[spellID] = true
-            if LCT.cooldowns and LCT.cooldowns.RegisterSpell then
-                LCT.cooldowns.RegisterSpell(spellID)
-                count = count + 1
-                LCT:Debug("Registered canonical spell:", spellName, "with", cooldown/1000, "second cooldown")
-            end
+        -- Register all canonical spells so UpdateAll() can check them when cooldowns trigger
+        newCanonicalSpells[spellID] = true
+        if LCT.cooldowns and LCT.cooldowns.RegisterSpell then
+            LCT.cooldowns.RegisterSpell(spellID)
+            count = count + 1
+            LCT:Debug("Registered canonical spell:", spellName, "ID:", spellID)
         end
     end
 
