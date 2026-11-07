@@ -474,11 +474,15 @@ function cooldowns.Initialize()
     cooldownEventFrame:RegisterEvent("ITEM_LOCK_CHANGED")
     cooldownEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
     cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    cooldownEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    cooldownEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     
     cooldownEventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "SPELL_UPDATE_COOLDOWN" or 
            event == "ACTIONBAR_UPDATE_COOLDOWN" or
-           event == "BAG_UPDATE_COOLDOWN" then
+           event == "BAG_UPDATE_COOLDOWN" or
+           event == "PLAYER_ENTERING_WORLD" or
+           event == "PLAYER_REGEN_ENABLED" then
             cooldowns.UpdateAll()
         elseif event == "ITEM_LOCK_CHANGED" then
             local bagOrSlot, slot = ...
@@ -497,7 +501,7 @@ function cooldowns.Initialize()
                     cooldowns.RegisterSpell(spellID)
                 end
                 
-                -- Update immediately and again after 0.05s to ensure cooldown write is caught
+                -- Update immediately and with staged retries to catch the cooldown write
                 cooldowns.UpdateCooldown(effectiveID, false)
                 if spellID ~= effectiveID then
                     cooldowns.UpdateCooldown(spellID, false)
@@ -515,12 +519,21 @@ function cooldowns.Initialize()
                         cooldowns.UpdateCooldown(spellID, false)
                     end
                 end)
+                C_Timer.After(0.35, function()
+                    cooldowns.UpdateCooldown(effectiveID, false)
+                    if spellID ~= effectiveID then
+                        cooldowns.UpdateCooldown(spellID, false)
+                    end
+                end)
             end
         end
     end)
     
-    -- Initial check after a short delay
+    -- Staged checks on startup
+    cooldowns.UpdateAll()
     C_Timer.After(0.5, cooldowns.UpdateAll)
+    C_Timer.After(1.5, cooldowns.UpdateAll)
+    C_Timer.After(3.0, cooldowns.UpdateAll)
     
     LCT:Debug("Cooldown tracking initialized (OnUpdate disabled until cooldowns active)")
 end

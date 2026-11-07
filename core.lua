@@ -74,42 +74,61 @@ end
 function LCT.compat.GetSpellCooldown(spellID)
     if not spellID then return nil, nil, nil, nil end
     
+    local cStart, cDuration, cEnabled, cIsOnGCD
+    
     -- Try modern C_Spell.GetSpellCooldown first (Forever 16001 / Modern)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellID)
         if info then
-            local enabled = IsReadable(info.isEnabled) and (info.isEnabled == true or info.isEnabled == 1) or false
-            local start = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
-            local duration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
-            local isOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
+            cEnabled = IsReadable(info.isEnabled) and (info.isEnabled == true or info.isEnabled == 1) or false
+            cStart = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
+            cDuration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
+            cIsOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
             
             -- If duration is missing, or is only reporting GCD (<= 5s), check non-GCD duration
-            if (not start or not duration or duration <= 5 or isOnGCD) and C_Spell.GetSpellCooldownDuration then
+            if (not cStart or not cDuration or cDuration <= 5 or cIsOnGCD) and C_Spell.GetSpellCooldownDuration then
                 local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
                 if durObj and durObj.GetRemainingDuration then
                     local ok, rem = pcall(durObj.GetRemainingDuration, durObj)
                     if ok and IsReadable(rem) and type(rem) == "number" and rem > 5 then
-                        start = GetTime()
-                        duration = rem
-                        enabled = true
-                        isOnGCD = false
+                        cStart = GetTime()
+                        cDuration = rem
+                        cEnabled = true
+                        cIsOnGCD = false
                     end
                 end
             end
             
-            if start and duration then
-                return start, duration, enabled, isOnGCD
+            -- If we have a genuine non-GCD cooldown (> 5s), return it immediately
+            if cStart and cDuration and cDuration > 5 and not cIsOnGCD then
+                return cStart, cDuration, cEnabled, false
             end
         end
     end
     
-    -- Legacy fallback: _G.GetSpellCooldown
+    -- Legacy fallback / check _G.GetSpellCooldown
     if _G.GetSpellCooldown then
         local start, duration, enabled = _G.GetSpellCooldown(spellID)
         if IsReadable(start) and IsReadable(duration) and type(start) == "number" and type(duration) == "number" then
             local isEnabled = (enabled == 1 or enabled == true)
-            return start, duration, isEnabled, false
+            -- If legacy reports a real cooldown (> 5s), prefer it over GCD
+            if duration > 5 then
+                return start, duration, isEnabled, false
+            end
+            -- If C_Spell didn't find anything, or legacy has a positive duration while C_Spell has 0
+            if not cStart then
+                cStart = start
+                cDuration = duration
+                cEnabled = isEnabled
+                cIsOnGCD = false
+            elseif cDuration == 0 and duration > 0 then
+                return start, duration, isEnabled, false
+            end
         end
+    end
+    
+    if cStart and cDuration then
+        return cStart, cDuration, cEnabled, cIsOnGCD
     end
     
     return nil, nil, nil, nil
@@ -249,12 +268,18 @@ frame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_ENTERING_WORLD" then
         LCT:Debug("PLAYER_ENTERING_WORLD fired - attempting initialization")
         LCT:EnsureInitialized()
+        if LCT.cooldowns and LCT.cooldowns.UpdateAll then
+            LCT.cooldowns.UpdateAll()
+        end
     elseif event == "PLAYER_LOGIN" then
-        LCT:Debug("PLAYER_LOGIN - Checking frame visibility")
-        LCT:Debug("Frame shown status:", frame:IsShown())
+        LCT:Debug("PLAYER_LOGIN - Checking frame visibility and initializing")
+        LCT:EnsureInitialized()
         if not frame:IsShown() and LCT.visibility and LCT.visibility.shown then
             LCT:Debug("Frame should be shown but isn't, showing now")
             frame:Show()
+        end
+        if LCT.cooldowns and LCT.cooldowns.UpdateAll then
+            LCT.cooldowns.UpdateAll()
         end
     end
 end)
