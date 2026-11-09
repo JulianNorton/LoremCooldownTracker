@@ -41,9 +41,9 @@ function spells.ScanSpellBook()
         }
     end
 
-    -- Path 1: Action Bar slots 1 to 120 (loaded immediately at login/reload)
+    -- Path 1: Action Bar slots 1 to 180 (covers standard bars and ElvUI extended bars)
     if GetActionInfo then
-        for slot = 1, 120 do
+        for slot = 1, 180 do
             local actionType, id, subType = GetActionInfo(slot)
             if actionType == "spell" and id and type(id) == "number" then
                 local spellName = LCT.compat.GetSpellName(id)
@@ -51,15 +51,18 @@ function spells.ScanSpellBook()
                 local rankNum = tonumber(subName:match("(%d+)")) or 0
                 AddCandidate(id, spellName, rankNum)
             elseif actionType == "macro" and id and type(id) == "number" then
-                local macroSpellID
                 if GetMacroSpell then
-                    macroSpellID = GetMacroSpell(id)
-                end
-                if macroSpellID and type(macroSpellID) == "number" then
-                    local spellName = LCT.compat.GetSpellName(macroSpellID)
-                    local subName = (C_Spell and C_Spell.GetSpellSubtext and C_Spell.GetSpellSubtext(macroSpellID)) or ""
-                    local rankNum = tonumber(subName:match("(%d+)")) or 0
-                    AddCandidate(macroSpellID, spellName, rankNum)
+                    local ret1, ret2, ret3 = GetMacroSpell(id)
+                    local macroSpellID = (type(ret3) == "number" and ret3) or (type(ret1) == "number" and ret1)
+                    local spellName = (type(ret1) == "string" and ret1 ~= "" and ret1) or (macroSpellID and LCT.compat.GetSpellName(macroSpellID))
+                    if not macroSpellID and spellName and C_Spell and C_Spell.GetSpellIDForSpellIdentifier then
+                        macroSpellID = C_Spell.GetSpellIDForSpellIdentifier(spellName)
+                    end
+                    if macroSpellID and type(macroSpellID) == "number" then
+                        local subName = (C_Spell and C_Spell.GetSpellSubtext and C_Spell.GetSpellSubtext(macroSpellID)) or ""
+                        local rankNum = tonumber(subName:match("(%d+)")) or 0
+                        AddCandidate(macroSpellID, spellName or LCT.compat.GetSpellName(macroSpellID), rankNum)
+                    end
                 end
             end
         end
@@ -77,7 +80,8 @@ function spells.ScanSpellBook()
                 for offset = 1, skillInfo.numSpellBookItems do
                     local slotIndex = skillInfo.itemIndexOffset + offset
                     local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, bank)
-                    if itemInfo and not itemInfo.isPassive and not itemInfo.isOffSpec and itemInfo.spellID then
+                    -- In Classic / WoW Forever, spells across all tabs (Arcane, Fire, Frost) are valid and usable
+                    if itemInfo and not itemInfo.isPassive and itemInfo.spellID then
                         local spellID = itemInfo.spellID
                         local spellName = itemInfo.name or LCT.compat.GetSpellName(spellID)
                         local subName = itemInfo.subName or (C_Spell and C_Spell.GetSpellSubtext and C_Spell.GetSpellSubtext(spellID)) or ""

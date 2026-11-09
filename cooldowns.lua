@@ -495,6 +495,8 @@ function cooldowns.Initialize()
     cooldownEventFrame:RegisterEvent("ITEM_LOCK_CHANGED")
     cooldownEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
     cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+    cooldownEventFrame:RegisterEvent("UNIT_SPELLCAST_START")
     cooldownEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     cooldownEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     cooldownEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -512,8 +514,15 @@ function cooldowns.Initialize()
             if not slot and bagOrSlot and bagOrSlot >= 1 and bagOrSlot <= 19 then
                 cooldowns.UpdateCooldown(bagOrSlot, true)
             end
-        elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-            local unit, _, spellID = ...
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" or 
+               event == "UNIT_SPELLCAST_CHANNEL_START" or 
+               event == "UNIT_SPELLCAST_START" then
+            local unit, arg2, arg3 = ...
+            local spellID = (type(arg3) == "number" and arg3) or (type(arg2) == "number" and arg2)
+            if not spellID and type(arg2) == "string" and C_Spell and C_Spell.GetSpellIDForSpellIdentifier then
+                spellID = C_Spell.GetSpellIDForSpellIdentifier(arg2)
+            end
+            
             if unit == "player" and spellID and LCT.compat.IsReadable(spellID) then
                 local effectiveID = (LCT.spells and LCT.spells.GetCanonicalSpellID and LCT.spells.GetCanonicalSpellID(spellID)) or spellID
                 
