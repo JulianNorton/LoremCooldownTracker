@@ -65,9 +65,14 @@ Left alone on purpose:
 
 ## Verification
 
-- In game, by reload and screenshot: the startup fix, the bar at its saved size, the new settings panel with the burst slider.
+- In game, stage by stage: the startup fix, then the build with dead files removed, the pop fix and the burst slider, then the final four-file build. Each was reloaded on `_forever_` and reported good; screenshots showed the bar at its saved size and position, the settings panel with the burst slider, cooldown icons running, and no startup-failure line in chat.
 - Offline: a 41-check script that loads the four files against a mocked WoW API. It covers startup on a client missing the event, the 2.5 settings carrying over, the pop and burst size, casts, resets, items, bags and the settings panel. An earlier version of the script, run against `793f120`, failed with the error from the client log. It only proves the addon's own logic; it cannot show how a real client behaves.
+- Not exercised one by one in game: findings 5 to 8 (item use-spell, early reset, back-to-back bag events, cooldown ending while hidden). They rest on the offline script and on normal play looking right.
 - Not verified: any client other than `_forever_`.
+
+## Release
+
+2.6 was uploaded to CurseForge (project 1183256) on 2026-11-26 as "LoremCooldownTracker 2.6", type Release, tagged for the five game versions of the 2.5 file plus WoW Forever 1.60.1. CurseForge does not pull from GitHub; the zip is built with `git archive --prefix=LoremCooldownTracker/` and excludes `docs/`.
 
 ## Ideas raised, not tried
 
