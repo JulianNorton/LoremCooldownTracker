@@ -50,7 +50,7 @@ Left alone on purpose:
 | | Before | After |
 | --- | --- | --- |
 | Own Lua | 2,896 lines in 9 files | 986 lines in 4 files |
-| Files shipped | 88 | 16 |
+| Files shipped | 88 | 15 |
 
 | File | Holds |
 | --- | --- |
@@ -66,13 +66,15 @@ Left alone on purpose:
 ## Verification
 
 - In game, stage by stage: the startup fix, then the build with dead files removed, the pop fix and the burst slider, then the final four-file build. Each was reloaded on `_forever_` and reported good; screenshots showed the bar at its saved size and position, the settings panel with the burst slider, cooldown icons running, and no startup-failure line in chat.
-- Offline: a 41-check script that loads the four files against a mocked WoW API. It covers startup on a client missing the event, the 2.5 settings carrying over, the pop and burst size, casts, resets, items, bags and the settings panel. An earlier version of the script, run against `793f120`, failed with the error from the client log. It only proves the addon's own logic; it cannot show how a real client behaves.
+- Offline: `tests/offline.lua`, a 41-check script that loads the four files against a mocked WoW API. Run it from the addon folder with `lua tests/offline.lua` (Lua 5.1). It covers startup on a client missing the event, the 2.5 settings carrying over, the pop and burst size, casts, resets, items, bags and the settings panel. An earlier version of the script, run against `793f120`, failed with the error from the client log. It only proves the addon's own logic; it cannot show how a real client behaves.
 - Not exercised one by one in game: findings 5 to 8 (item use-spell, early reset, back-to-back bag events, cooldown ending while hidden). They rest on the offline script and on normal play looking right.
 - Not verified: any client other than `_forever_`.
 
 ## Release
 
-2.6 was uploaded to CurseForge (project 1183256) on 2026-11-26 as "LoremCooldownTracker 2.6", type Release, tagged for the five game versions of the 2.5 file plus WoW Forever 1.60.1. CurseForge does not pull from GitHub; the zip is built with `git archive --prefix=LoremCooldownTracker/` and excludes `docs/`.
+2.6 was merged to `main`, tagged `v2.6` and released on GitHub on 2026-11-27. The same zip was uploaded to CurseForge (project 1183256) as "LoremCooldownTracker 2.6", type Release, tagged for the five game versions of the 2.5 file plus WoW Forever 1.60.1. The 2.5 file was archived afterwards, so 2.6 is the only file players get.
+
+CurseForge does not pull from GitHub; each release is a manual upload. Build the zip with `git archive --format=zip --prefix=LoremCooldownTracker/ -o LoremCooldownTracker-<version>.zip <tag>`. `.gitattributes` keeps `docs/` and `tests/` out of it.
 
 ## Ideas raised, not tried
 
@@ -80,11 +82,9 @@ Left alone on purpose:
 - Show one icon for bag items that share a cooldown (potions).
 - Stop a base-cooldown timer when the API says the cooldown has not started (Stealth, Presence of Mind).
 - Track pet abilities.
-- Keep the offline test in the repo and run it before each release.
+- Load 2.6 once on Classic Era, TBC and Wrath clients; it has only run on WoW Forever.
 - Remove the old `dimensions` and `visibility` tables from the saved variables once rollback to 2.5 no longer matters.
 
 ## Rollback
 
-`git checkout 793f120 -- .` restores the code as it was before this work (with finding 1). The saved variables keep their old layout alongside the new keys, so older code still finds its settings.
-
-Local snapshots from this work: `refs/backup/pre-audit` (before any change), `refs/backup/startup-fix` (one-line fix only), `refs/backup/stage-1` (dead files removed, pop fix, burst setting; seen working in game).
+`git checkout 793f120 -- .` restores the code as it was before this work (with finding 1), and `git checkout v2.5 -- .` restores the previous release. The saved variables keep their old layout alongside the new keys, so older code still finds its settings.
