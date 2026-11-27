@@ -1,81 +1,89 @@
--- Create addon namespace
 local addonName, LCT = ...
-LCT.version = "1.1.0"
-LCT.core = true  -- Mark core module as loaded for test framework
 
--- Debug print function
 function LCT:Debug(...)
-    if self.debug then
+    if self.db and self.db.debug then
         print("LoremCT Debug:", ...)
     end
 end
 
--- Cross-client API compatibility & secret value protection
+-- Saved settings (LoremCTDB) and their defaults
+LCT.defaults = {
+    barWidth = 420,
+    barHeight = 23,
+    iconSize = 24,
+    burstScale = 1.5, -- finish pop: the icon grows to this multiple of its size (1 = fade only)
+    locked = false,
+    shown = true,
+    bgOpacity = 0.5,
+    showTimeText = true,
+    showIcons = true,
+    debug = false,
+}
+LCT.maxTime = 600 -- seconds covered by the bar; longer cooldowns wait at the right edge
+
+----------------------------------------------------------------------------------------
+-- Client compatibility. The same call exists under different names across clients, and
+-- on modern ones a value can be "secret" (unreadable by addons), which must be checked
+-- before it is compared or used.
+----------------------------------------------------------------------------------------
 local issecretvalue = _G.issecretvalue
 local function IsReadable(val)
     return not (issecretvalue and issecretvalue(val))
 end
 
-LCT.compat = {
-    IsReadable = IsReadable,
-}
+-- The value if an addon may read it and it is not empty, otherwise nil
+local function Usable(val)
+    if IsReadable(val) and val and val ~= "" then
+        return val
+    end
+end
+
+LCT.compat = { IsReadable = IsReadable }
 
 function LCT.compat.GetSpellName(spellID)
     if not spellID then return nil end
-    if C_Spell and C_Spell.GetSpellName then
-        local name = C_Spell.GetSpellName(spellID)
-        if IsReadable(name) and name and name ~= "" then return name end
-    end
-    if C_Spell and C_Spell.GetSpellInfo then
+    local name = C_Spell and C_Spell.GetSpellName and Usable(C_Spell.GetSpellName(spellID))
+    if not name and C_Spell and C_Spell.GetSpellInfo then
         local info = C_Spell.GetSpellInfo(spellID)
-        if info and IsReadable(info.name) and info.name and info.name ~= "" then
-            return info.name
-        end
+        name = info and Usable(info.name)
     end
-    if _G.GetSpellInfo then
-        local name = _G.GetSpellInfo(spellID)
-        if IsReadable(name) and name and name ~= "" then return name end
-    end
-    return nil
+    return name or (_G.GetSpellInfo and Usable((_G.GetSpellInfo(spellID)))) or nil
 end
 
 function LCT.compat.GetSpellTexture(spellID)
     if not spellID then return nil end
-    if C_Spell and C_Spell.GetSpellTexture then
-        local tex = C_Spell.GetSpellTexture(spellID)
-        if IsReadable(tex) and tex then return tex end
-    end
-    if C_Spell and C_Spell.GetSpellInfo then
+    local texture = C_Spell and C_Spell.GetSpellTexture and Usable((C_Spell.GetSpellTexture(spellID)))
+    if not texture and C_Spell and C_Spell.GetSpellInfo then
         local info = C_Spell.GetSpellInfo(spellID)
-        if info and IsReadable(info.iconID) and info.iconID then
-            return info.iconID
-        end
+        texture = info and Usable(info.iconID)
     end
-    if _G.GetSpellTexture then
-        local tex = _G.GetSpellTexture(spellID)
-        if IsReadable(tex) and tex then return tex end
-    end
-    return nil
+    return texture or (_G.GetSpellTexture and Usable((_G.GetSpellTexture(spellID)))) or nil
 end
 
+-- Base cooldown in milliseconds, or nil
 function LCT.compat.GetSpellBaseCooldown(spellID)
     if not spellID then return nil end
-    if _G.GetSpellBaseCooldown then
-        local ok, cd = pcall(_G.GetSpellBaseCooldown, spellID)
+    local function Try(get)
+        if not get then return nil end
+        local ok, cd = pcall(get, spellID)
         if ok and IsReadable(cd) and type(cd) == "number" then return cd end
     end
-    if C_Spell and C_Spell.GetSpellBaseCooldown then
-        local ok, cd = pcall(C_Spell.GetSpellBaseCooldown, spellID)
-        if ok and IsReadable(cd) and type(cd) == "number" then return cd end
-    end
-    return nil
+    return Try(_G.GetSpellBaseCooldown) or Try(C_Spell and C_Spell.GetSpellBaseCooldown)
 end
 
+function LCT.compat.GetItemIcon(itemID)
+    if not itemID then return nil end
+    return (C_Item and C_Item.GetItemIconByID and Usable(C_Item.GetItemIconByID(itemID)))
+        or (_G.GetItemIcon and Usable(_G.GetItemIcon(itemID)))
+        or nil
+end
+
+-- Returns start, duration, enabled, isOnGCD, or nil when nothing is readable.
 function LCT.compat.GetSpellCooldown(spellID)
     if not spellID then return nil, nil, nil, nil end
-    
+
     local cStart, cDuration, cEnabled, cIsOnGCD
-    
+
     -- Try modern C_Spell.GetSpellCooldown first (Forever 16001 / Modern)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellID)
@@ -84,7 +92,7 @@ function LCT.compat.GetSpellCooldown(spellID)
             cStart = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
             cDuration = IsReadable(info.duration) and type(info.duration) == "number" and info.duration or nil
             cIsOnGCD = IsReadable(info.isOnGCD) and (info.isOnGCD == true) or false
-            
+
             -- If duration is missing, or is only reporting GCD (<= 5s), check non-GCD duration
             if (not cStart or not cDuration or cDuration <= 5 or cIsOnGCD) and C_Spell.GetSpellCooldownDuration then
                 local durObj = C_Spell.GetSpellCooldownDuration(spellID, true)
@@ -109,14 +117,14 @@ function LCT.compat.GetSpellCooldown(spellID)
                     end
                 end
             end
-            
+
             -- If we have a genuine non-GCD cooldown (> 5s), return it immediately
             if cStart and cDuration and cDuration > 5 then
                 return cStart, cDuration, cEnabled, false
             end
         end
     end
-    
+
     -- Legacy fallback / check _G.GetSpellCooldown
     if _G.GetSpellCooldown then
         local start, duration, enabled = _G.GetSpellCooldown(spellID)
@@ -137,206 +145,113 @@ function LCT.compat.GetSpellCooldown(spellID)
             end
         end
     end
-    
+
     if cStart and cDuration then
         return cStart, cDuration, cEnabled, cIsOnGCD
     end
-    
+
     return nil, nil, nil, nil
 end
 
-function LCT.compat.GetItemName(itemID)
-    if not itemID then return nil end
-    if C_Item and C_Item.GetItemNameByID then
-        local name = C_Item.GetItemNameByID(itemID)
-        if IsReadable(name) and name and name ~= "" then return name end
-    end
-    if _G.GetItemInfo then
-        local name = _G.GetItemInfo(itemID)
-        if IsReadable(name) and name and name ~= "" then return name end
-    end
-    return nil
-end
-
-function LCT.compat.GetItemIcon(itemID)
-    if not itemID then return nil end
-    if C_Item and C_Item.GetItemIconByID then
-        local icon = C_Item.GetItemIconByID(itemID)
-        if IsReadable(icon) and icon then return icon end
-    end
-    if _G.GetItemIcon then
-        local icon = _G.GetItemIcon(itemID)
-        if IsReadable(icon) and icon then return icon end
-    end
-    return nil
-end
-
--- Set default options
-LCT.defaults = {
-    -- Debug
-    debug = false,
-    
-    -- Frame dimensions
-    barWidth = 420,
-    barHeight = 23,
-    iconSize = 24,
-    locked = false,
-    
-    -- Visibility
-    shown = true,
-    bgOpacity = 0.5,
-    showTimeText = true,
-    showIcons = true,
-    
-    -- Timeline
-    maxTime = 600, -- 10 minutes
-    updateFrequency = 0.1 -- 10 times per second
-}
-
--- Initialize current settings from defaults
-for key, value in pairs(LCT.defaults) do
-    LCT[key] = value
-end
-
--- Main frame
+----------------------------------------------------------------------------------------
+-- The bar frame
+----------------------------------------------------------------------------------------
 local frame = CreateFrame("Frame", "LoremCTFrame", UIParent)
-LCT.frame = frame  -- Make frame accessible to other modules
-
--- Set frame properties
+LCT.frame = frame
 frame:SetSize(LCT.defaults.barWidth, LCT.defaults.barHeight)
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
-frame:EnableMouse(true)
 
--- Add frame locking property
-frame.locked = LCT.defaults.locked
+frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+frame.bg:SetAllPoints()
+frame.bg:SetColorTexture(0, 0, 0, 0.5)
 
--- Modify dragging behavior to respect lock
+-- Drag to move. A locked bar has its mouse disabled, so these never fire for it.
 frame:SetScript("OnMouseDown", function(self, button)
-    if not self.locked and button == "LeftButton" then
+    if button == "LeftButton" then
         self:StartMoving()
     end
 end)
 frame:SetScript("OnMouseUp", function(self)
     self:StopMovingOrSizing()
-    -- Save position after moving
-    if LCT.visibility and LCT.visibility.SaveSettings then
-        LCT.visibility.SaveSettings()
-    end
+    local point, _, relativePoint, x, y = self:GetPoint()
+    LCT.db.position = { point = point, relativePoint = relativePoint, x = x, y = y }
 end)
 
--- Create timeline background
-frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-frame.bg:SetAllPoints()
-frame.bg:SetColorTexture(0, 0, 0, LCT.defaults.bgOpacity)
-
-LCT:Debug("Frame created with dimensions", frame:GetWidth(), frame:GetHeight())
-
--- Initialize frame visibility
-frame:Show()
-LCT:Debug("Frame shown status after initial Show():", frame:IsShown())
-
--- Load modules
-LCT:Debug("Loading modules...")
-
--- Load animations module
-LCT.animations = LCT.animations or {}
-LCT.animations.StartPositionAnimation = LCT.animations.StartPositionAnimation or function() end
-LCT.animations.StartFinishAnimation = LCT.animations.StartFinishAnimation or function() end
-LCT.animations.CancelAnimation = LCT.animations.CancelAnimation or function() end
-
--- Register events for addon initialization
--- Helper to ensure modules are initialized only once
-function LCT:EnsureInitialized()
-    if self.initialized then return end
-    
-    LCT:Debug("Initializing modules...")
-    
-    -- Initialize modules in correct order
-    local modules = {"visibility", "cooldowns", "spells", "items", "timeline", "settings"}
-    for _, moduleName in ipairs(modules) do
-        if LCT[moduleName] and LCT[moduleName].Initialize then
-            LCT:Debug("Initializing " .. moduleName .. " module")
-            LCT[moduleName].Initialize()
-        else
-            LCT:Debug("ERROR - " .. moduleName .. " module not found or missing Initialize")
-        end
-    end
-    
-    self.initialized = true
-    LCT:Debug("Frame shown status after module initialization:", frame:IsShown())
+-- Push every saved setting to the screen. Called at login and after any change.
+function LCT:Apply()
+    local db = self.db
+    frame:SetSize(db.barWidth, db.barHeight)
+    frame:EnableMouse(not db.locked)
+    frame:SetShown(db.shown)
+    frame.bg:SetAlpha(db.bgOpacity)
+    self.bar.Refresh()
+    self.settings.Refresh()
 end
 
--- Register events for addon initialization
-frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Fallback for when ADDON_LOADED is unreliable
+local function LoadSettings()
+    LoremCTDB = LoremCTDB or {}
+    local db = LoremCTDB
 
-frame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == addonName then
-        LCT:Debug("ADDON_LOADED fired - attempting initialization")
-        LCT:EnsureInitialized()
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        LCT:Debug("PLAYER_ENTERING_WORLD fired - attempting initialization")
-        LCT:EnsureInitialized()
-        if LCT.cooldowns and LCT.cooldowns.UpdateAll then
-            LCT.cooldowns.UpdateAll()
-        end
-    elseif event == "PLAYER_LOGIN" then
-        LCT:Debug("PLAYER_LOGIN - Checking frame visibility and initializing")
-        LCT:EnsureInitialized()
-        if not frame:IsShown() and LCT.visibility and LCT.visibility.shown then
-            LCT:Debug("Frame should be shown but isn't, showing now")
-            frame:Show()
-        end
-        if LCT.cooldowns and LCT.cooldowns.UpdateAll then
-            LCT.cooldowns.UpdateAll()
+    -- Up to 2.5 the settings sat in these two sub-tables. Copy them up once. They are left
+    -- in place so that an older version of the addon still finds its settings.
+    for _, old in ipairs({ "dimensions", "visibility" }) do
+        if type(db[old]) == "table" then
+            for key, value in pairs(db[old]) do
+                if db[key] == nil then db[key] = value end
+            end
         end
     end
+    for key, value in pairs(LCT.defaults) do
+        if db[key] == nil then db[key] = value end
+    end
+    LCT.db = db
+
+    local pos = db.position
+    if pos then
+        frame:ClearAllPoints()
+        frame:SetPoint(pos.point or "CENTER", UIParent, pos.relativePoint or "CENTER", pos.x or 0, pos.y or 0)
+    end
+end
+
+frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript("OnEvent", function(self, _, name)
+    if name ~= addonName then return end
+    self:UnregisterEvent("ADDON_LOADED")
+    LoadSettings()
+
+    -- Each module starts on its own, so a failure in one is reported in chat and cannot
+    -- stop the other. (An unknown event once silently took out most of the addon.)
+    for _, module in ipairs({ "tracker", "settings" }) do
+        local ok, err = pcall(LCT[module].Initialize)
+        if not ok then
+            print("|cffff5555LoremCT:|r " .. module .. " failed to start: " .. tostring(err))
+        end
+    end
+    LCT:Apply()
 end)
 
--- Basic slash command registration
 SLASH_LCT1 = "/lct"
 SlashCmdList["LCT"] = function(msg)
+    local db = LCT.db
+    msg = (msg or ""):lower():match("^%s*(.-)%s*$")
     if msg == "scan" then
-        if LCT.spells and LCT.spells.ScanSpellBook then
-            LCT:Debug("Manual spell scan requested")
-            LCT.spells.ScanSpellBook()
-            print("LoremCT: Rescanned spellbook")
-        else
-            LCT:Debug("ERROR - Could not scan spellbook, spells module not found")
-        end
+        LCT.tracker.ScanSpells()
+        print("LoremCT: Rescanned spellbook")
     elseif msg == "lock" then
-        frame.locked = not frame.locked
-        frame:EnableMouse(not frame.locked)
-        if LCT.settings and LCT.settings.SaveDimensionSettings then
-            LCT.settings.SaveDimensionSettings()
-        end
-        if LCT.settings and LCT.settings.UpdateDimensionControls then
-            LCT.settings.UpdateDimensionControls()
-        end
-        print("LoremCT: Frame " .. (frame.locked and "locked (click-through)" or "unlocked (draggable)"))
+        db.locked = not db.locked
+        print("LoremCT: Frame " .. (db.locked and "locked (click-through)" or "unlocked (draggable)"))
     elseif msg == "toggle" then
-        if frame:IsVisible() then
-            frame:Hide()
-            print("LoremCT: Frame hidden")
-        else
-            frame:Show()
-            print("LoremCT: Frame shown")
-        end
-        -- Save visibility state
-        if LCT.visibility and LCT.visibility.SaveSettings then
-            LCT.visibility.SaveSettings()
-        end
-        LCT:Debug("Frame shown status after toggle:", frame:IsShown())
+        db.shown = not db.shown
+        print("LoremCT: Frame " .. (db.shown and "shown" or "hidden"))
     elseif msg == "debug" then
-        LCT.debug = not LCT.debug
-        print("LoremCT: Debug mode", LCT.debug and "enabled" or "disabled")
+        db.debug = not db.debug
+        print("LoremCT: Debug mode " .. (db.debug and "enabled" or "disabled"))
+    elseif msg == "test" then
+        LCT.bar.Preview()
     else
-        if LCT.settingsFrame and LCT.settingsFrame:IsShown() then
-            LCT.settingsFrame:Hide()
-        elseif LCT.settingsFrame then
-            LCT.settingsFrame:Show()
-        end
+        LCT.settings.Toggle()
+        return
     end
+    LCT:Apply()
 end
