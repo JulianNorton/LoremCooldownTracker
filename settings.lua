@@ -1,266 +1,176 @@
-local addonName, LCT = ...
+local _, LCT = ...
 
--- Initialize settings namespace
-LCT.settings = {}
+-- The settings panel and the minimap button. Every control edits one key of LCT.db and
+-- then calls LCT:Apply(), which is the only place settings are pushed to the screen.
+local settings = {}
+LCT.settings = settings
 
--- Function to save dimension settings
-local function SaveDimensionSettings()
-    if not LoremCTDB then LoremCTDB = {} end
-    if not LoremCTDB.dimensions then LoremCTDB.dimensions = {} end
-    
-    LoremCTDB.dimensions.barWidth = LCT.frame:GetWidth()
-    LoremCTDB.dimensions.barHeight = LCT.frame:GetHeight()
-    LoremCTDB.dimensions.iconSize = LCT.iconSize
-    LoremCTDB.dimensions.locked = LCT.frame.locked
+local panel
+local refreshers = {} -- one function per control: copies its value from the db into the control
+local refreshing = false
+local sliderCount = 0
+local y = -36 -- where the next control goes, measured down from the top of the panel
+
+local function Changed(key, value)
+    if refreshing then return end -- the control is being set from the db, not by the user
+    LCT.db[key] = value
+    LCT:Apply()
 end
 
--- Function to load dimension settings
-local function LoadDimensionSettings()
-    if not LoremCTDB then LoremCTDB = {} end
-    if not LoremCTDB.dimensions then LoremCTDB.dimensions = {} end
-    
-    local settings = LoremCTDB.dimensions
-    
-    -- Apply settings with fallback to defaults
-    local width = settings.barWidth or LCT.defaults.barWidth
-    local height = settings.barHeight or LCT.defaults.barHeight
-    local iconSize = settings.iconSize or LCT.defaults.iconSize
-    local locked = settings.locked or LCT.defaults.locked
-    
-    -- Apply the settings
-    LCT.frame:SetWidth(width)
-    LCT.frame:SetHeight(height)
-    LCT.iconSize = iconSize
-    LCT.frame.locked = locked
-    LCT.frame:EnableMouse(not locked)
-    
-    -- Update existing cooldown icons size
-    if LCT.activeCooldowns then
-        for _, icon in pairs(LCT.activeCooldowns) do
-            icon:SetSize(iconSize, iconSize)
-        end
-    end
-    
-    -- Update UI controls when settings frame exists
-    if LCT.settings.UpdateDimensionControls then
-        LCT.settings.UpdateDimensionControls()
-    end
+local function Place(region, height)
+    region:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, y)
+    y = y - height
 end
 
--- Helper function to create input box (made accessible to visibility module)
-function LCT.settings.CreateInputBox(parent, width, initialValue)
-    local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-    box:SetSize(width, 20)
+local function Header(text)
+    y = y - 8
+    local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    header:SetText(text)
+    Place(header, 24)
+end
+
+local function Check(key, text)
+    local check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    check.label = check:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    check.label:SetPoint("LEFT", check, "RIGHT", 0, 1)
+    check.label:SetText(text)
+    check:SetScript("OnClick", function(self)
+        Changed(key, not not self:GetChecked())
+    end)
+    refreshers[#refreshers + 1] = function(db)
+        check:SetChecked(db[key])
+    end
+    Place(check, 34)
+end
+
+-- scale converts the saved value to the slider's: 100 shows a 0-1 setting as a percentage
+local function Slider(key, text, minValue, maxValue, scale)
+    scale = scale or 1
+    sliderCount = sliderCount + 1
+    local name = "LoremCTSlider" .. sliderCount -- older clients find the labels by global name
+    local slider = CreateFrame("Slider", name, panel, "OptionsSliderTemplate")
+    slider:SetMinMaxValues(minValue, maxValue)
+    slider:SetValueStep(1)
+    if slider.SetObeyStepOnDrag then
+        slider:SetObeyStepOnDrag(true)
+    end
+    for suffix, label in pairs({ Low = minValue, High = maxValue, Text = text }) do
+        local region = slider[suffix] or _G[name .. suffix]
+        if region then region:SetText(label) end
+    end
+
+    local box = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    box:SetSize(50, 20)
     box:SetAutoFocus(false)
     box:SetNumeric(true)
-    box:SetText(initialValue)
+    box:SetPoint("LEFT", slider, "RIGHT", 10, 0)
+
+    local function Set(value)
+        value = math.floor(math.max(minValue, math.min(maxValue, value)) + 0.5)
+        box:SetText(value)
+        Changed(key, value / scale)
+    end
+    slider:SetScript("OnValueChanged", function(_, value)
+        Set(value)
+    end)
+    box:SetScript("OnEnterPressed", function(self)
+        local value = tonumber(self:GetText())
+        if value then Set(value) end
+        self:ClearFocus()
+    end)
+    refreshers[#refreshers + 1] = function(db)
+        local value = math.floor(db[key] * scale + 0.5)
+        slider:SetValue(value)
+        box:SetText(value)
+    end
+
+    y = y - 16 -- room for the slider's title above it
+    Place(slider, 34)
     return box
 end
 
--- Helper function to create slider with input box
-function LCT.settings.CreateSliderControl(parent, label, min, max, initialValue, callback)
-    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
-    slider:SetMinMaxValues(min, max)
-    slider:SetValue(initialValue)
-    slider:SetValueStep(1)
-    slider:SetObeyStepOnDrag(true)
-    slider.Low:SetText(min)
-    slider.High:SetText(max)
-    slider.Text:SetText(label)
-
-    local input = LCT.settings.CreateInputBox(parent, 50, tostring(initialValue))
-    input:SetPoint("LEFT", slider, "RIGHT", 10, 0)
-
-    slider:SetScript("OnValueChanged", function(self, value)
-        input:SetText(math.floor(value))
-        callback(value)
-    end)
-
-    input:SetScript("OnEnterPressed", function(self)
-        local value = tonumber(self:GetText())
-        if value then
-            value = math.max(min, math.min(max, value))
-            slider:SetValue(value)
-            self:SetText(value)
-            callback(value)
-        end
-        self:ClearFocus()
-    end)
-
-    return slider, input
+local function Button(text, width, onClick)
+    local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    button:SetSize(width, 22)
+    button:SetText(text)
+    button:SetScript("OnClick", onClick)
+    return button
 end
 
--- Create settings frame
-local settingsFrame = CreateFrame("Frame", "LoremCTSettings", UIParent, "BasicFrameTemplateWithInset")
-settingsFrame:SetSize(300, 600)
-settingsFrame:SetPoint("CENTER")
-settingsFrame:SetMovable(true)
-settingsFrame:EnableMouse(true)
-settingsFrame:RegisterForDrag("LeftButton")
-settingsFrame:SetScript("OnDragStart", settingsFrame.StartMoving)
-settingsFrame:SetScript("OnDragStop", settingsFrame.StopMovingOrSizing)
-settingsFrame:Hide()
-
--- Set title
-settingsFrame.TitleText:SetText("Lorem Cooldown Tracker")
-
--- Create dimension controls
-local dimensionControls = {}
-
--- Lock Frame Toggle
-dimensionControls.lockButton = CreateFrame("CheckButton", nil, settingsFrame, "UICheckButtonTemplate")
-dimensionControls.lockButton:SetPoint("TOPLEFT", 20, -40)
-dimensionControls.lockButton:SetScript("OnClick", function(self)
-    LCT.frame.locked = self:GetChecked()
-    LCT.frame:EnableMouse(not LCT.frame.locked)
-    SaveDimensionSettings()
-end)
-dimensionControls.lockButton.text = dimensionControls.lockButton:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-dimensionControls.lockButton.text:SetPoint("LEFT", dimensionControls.lockButton, "RIGHT", 0, 1)
-dimensionControls.lockButton.text:SetText("Lock Frame")
-
--- Bar Width Controls
-dimensionControls.barWidthSlider, dimensionControls.barWidthInput = LCT.settings.CreateSliderControl(
-    settingsFrame, "Bar Width", 100, 1000, 300, function(value)
-        LCT.frame:SetWidth(value)
-        SaveDimensionSettings()
+local function CreatePanel()
+    panel = CreateFrame("Frame", "LoremCTSettings", UIParent, "BasicFrameTemplateWithInset")
+    panel:SetWidth(300)
+    panel:SetPoint("CENTER")
+    panel:SetMovable(true)
+    panel:EnableMouse(true)
+    panel:RegisterForDrag("LeftButton")
+    panel:SetScript("OnDragStart", panel.StartMoving)
+    panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
+    panel:Hide()
+    if panel.TitleText then
+        panel.TitleText:SetText("Lorem Cooldown Tracker")
     end
-)
-dimensionControls.barWidthSlider:SetPoint("TOPLEFT", dimensionControls.lockButton, "BOTTOMLEFT", 0, -30)
 
--- Bar Height Controls
-dimensionControls.barHeightSlider, dimensionControls.barHeightInput = LCT.settings.CreateSliderControl(
-    settingsFrame, "Bar Height", 10, 100, 30, function(value)
-        LCT.frame:SetHeight(value)
-        SaveDimensionSettings()
-    end
-)
-dimensionControls.barHeightSlider:SetPoint("TOPLEFT", dimensionControls.barWidthSlider, "BOTTOMLEFT", 0, -30)
+    Check("locked", "Lock Frame")
+    Slider("barWidth", "Bar Width", 100, 1000)
+    Slider("barHeight", "Bar Height", 10, 100)
+    Slider("iconSize", "Icon Size", 8, 64)
+    local burstBox = Slider("burstScale", "Finish Burst Size (%)", 100, 400, 100)
+    Button("Test", 48, LCT.bar.Preview):SetPoint("LEFT", burstBox, "RIGHT", 6, 0)
 
--- Icon Size Controls
-dimensionControls.iconSizeSlider, dimensionControls.iconSizeInput = LCT.settings.CreateSliderControl(
-    settingsFrame, "Icon Size", 8, 64, 24, function(value)
-        LCT.iconSize = value
-        -- Update existing cooldown icons
-        if LCT.activeCooldowns then
-            for _, icon in pairs(LCT.activeCooldowns) do
-                icon:SetSize(value, value)
-            end
-        end
-        SaveDimensionSettings()
-    end
-)
-dimensionControls.iconSizeSlider:SetPoint("TOPLEFT", dimensionControls.barHeightSlider, "BOTTOMLEFT", 0, -30)
+    Header("Visibility Options")
+    Check("shown", "Show Timeline")
+    Slider("bgOpacity", "Background Opacity (%)", 0, 100, 100)
+    Check("showTimeText", "Show Time Text")
+    Check("showIcons", "Show Icons")
 
--- Create visibility controls
-local visibilityControls = LCT.visibility.CreateControls(settingsFrame)
-visibilityControls.header:SetPoint("TOPLEFT", dimensionControls.iconSizeSlider, "BOTTOMLEFT", 0, -30)
-visibilityControls.showFrameButton:SetPoint("TOPLEFT", visibilityControls.header, "BOTTOMLEFT", 0, -10)
-visibilityControls.bgOpacitySlider:SetPoint("TOPLEFT", visibilityControls.showFrameButton, "BOTTOMLEFT", 0, -30)
-visibilityControls.showTimeTextButton:SetPoint("TOPLEFT", visibilityControls.bgOpacitySlider, "BOTTOMLEFT", 0, -20)
-visibilityControls.showIconsButton:SetPoint("TOPLEFT", visibilityControls.showTimeTextButton, "BOTTOMLEFT", 0, -10)
-
--- Create advanced controls
-local advancedControls = {}
-
--- Advanced header
-advancedControls.header = settingsFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-advancedControls.header:SetText("Advanced")
-advancedControls.header:SetPoint("TOPLEFT", visibilityControls.showIconsButton, "BOTTOMLEFT", 0, -20)
-
--- Debug mode toggle
-advancedControls.debugButton = CreateFrame("CheckButton", nil, settingsFrame, "UICheckButtonTemplate")
-advancedControls.debugButton:SetPoint("TOPLEFT", advancedControls.header, "BOTTOMLEFT", 0, -10)
-advancedControls.debugButton:SetScript("OnClick", function(self)
-    LCT.debug = self:GetChecked()
-    -- Save to database
-    if not LoremCTDB then LoremCTDB = {} end
-    LoremCTDB.debug = LCT.debug
-    print("LoremCT: Debug mode", LCT.debug and "enabled" or "disabled")
-end)
-advancedControls.debugButton.text = advancedControls.debugButton:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-advancedControls.debugButton.text:SetPoint("LEFT", advancedControls.debugButton, "RIGHT", 0, 1)
-advancedControls.debugButton.text:SetText("Debug Mode")
-
--- Scan spellbook button
-advancedControls.scanButton = CreateFrame("Button", nil, settingsFrame, "UIPanelButtonTemplate")
-advancedControls.scanButton:SetSize(120, 25)
-advancedControls.scanButton:SetPoint("TOPLEFT", advancedControls.debugButton, "BOTTOMLEFT", 0, -15)
-advancedControls.scanButton:SetText("Scan Spellbook")
-advancedControls.scanButton:SetScript("OnClick", function()
-    if LCT.spells and LCT.spells.ScanSpellBook then
-        LCT:Debug("Manual spell scan requested from settings UI")
-        LCT.spells.ScanSpellBook()
+    Header("Advanced")
+    Check("debug", "Debug Mode")
+    y = y - 4
+    Place(Button("Scan Spellbook", 120, function()
+        LCT.tracker.ScanSpells()
         print("LoremCT: Rescanned spellbook")
-    else
-        print("LoremCT: Error - Could not scan spellbook")
+    end), 22)
+
+    panel:SetHeight(20 - y)
+end
+
+-- Copy the saved settings into the controls
+function settings.Refresh()
+    if not panel then return end
+    refreshing = true
+    for _, refresh in ipairs(refreshers) do
+        refresh(LCT.db)
     end
-end)
-
--- Function to update dimension controls
-function LCT.settings.UpdateDimensionControls()
-    dimensionControls.lockButton:SetChecked(LCT.frame.locked)
-    dimensionControls.barWidthSlider:SetValue(LCT.frame:GetWidth())
-    dimensionControls.barWidthInput:SetText(math.floor(LCT.frame:GetWidth()))
-    dimensionControls.barHeightSlider:SetValue(LCT.frame:GetHeight())
-    dimensionControls.barHeightInput:SetText(math.floor(LCT.frame:GetHeight()))
-    dimensionControls.iconSizeSlider:SetValue(LCT.iconSize)
-    dimensionControls.iconSizeInput:SetText(math.floor(LCT.iconSize))
+    refreshing = false
 end
 
--- Function to update visibility controls
-function LCT.settings.UpdateVisibilityControls()
-    visibilityControls.showFrameButton:SetChecked(LCT.frame:IsShown())
-    visibilityControls.bgOpacitySlider:SetValue(LCT.frame.bg:GetAlpha() * 100)
-    visibilityControls.bgOpacityInput:SetText(math.floor(LCT.frame.bg:GetAlpha() * 100))
-    visibilityControls.showTimeTextButton:SetChecked(LCT.visibility.showTimeText)
-    visibilityControls.showIconsButton:SetChecked(LCT.visibility.showIcons)
+function settings.Toggle()
+    if panel then
+        panel:SetShown(not panel:IsShown())
+    end
 end
 
--- Function to update advanced controls
-function LCT.settings.UpdateAdvancedControls()
-    advancedControls.debugButton:SetChecked(LCT.debug)
-end
-
--- Create minimap icon
-local minimapIcon = LibStub("LibDataBroker-1.1"):NewDataObject("LoremCT", {
-    type = "launcher",
-    icon = "Interface\\Icons\\Spell_Nature_TimeStop",
-    OnClick = function(self, button)
-        if button == "LeftButton" then
-            if settingsFrame:IsShown() then
-                settingsFrame:Hide()
-            else
-                settingsFrame:Show()
+function settings.Initialize()
+    -- Minimap button first, so it is there even if the panel cannot be built
+    local launcher = LibStub("LibDataBroker-1.1"):NewDataObject("LoremCT", {
+        type = "launcher",
+        icon = "Interface\\Icons\\Spell_Nature_TimeStop",
+        OnClick = function(_, button)
+            if button == "LeftButton" then
+                settings.Toggle()
             end
-        end
-    end,
-    OnTooltipShow = function(tooltip)
-        tooltip:AddLine("Lorem Cooldown Tracker")
-        tooltip:AddLine("Click to open settings", 1, 1, 1)
-    end,
-})
-
-local minimapButton = LibStub("LibDBIcon-1.0")
-minimapButton:Register("LoremCT", minimapIcon, {minimapPos = 45})
-
--- Register events for loading settings
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        LoadDimensionSettings()
-        LCT.visibility.LoadSettings()
-        -- Load debug state
-        if LoremCTDB and LoremCTDB.debug ~= nil then
-            LCT.debug = LoremCTDB.debug
-        end
-        -- Update advanced controls
-        if LCT.settings.UpdateAdvancedControls then
-            LCT.settings.UpdateAdvancedControls()
-        end
+        end,
+        OnTooltipShow = function(tooltip)
+            tooltip:AddLine("Lorem Cooldown Tracker")
+            tooltip:AddLine("Click to open settings", 1, 1, 1)
+        end,
+    })
+    LCT.db.minimap = LCT.db.minimap or { minimapPos = 45 }
+    local minimapIcon = LibStub("LibDBIcon-1.0")
+    if not minimapIcon:IsRegistered("LoremCT") then
+        minimapIcon:Register("LoremCT", launcher, LCT.db.minimap)
     end
-end)
 
--- Make settings frame accessible to core
-LCT.settingsFrame = settingsFrame 
+    CreatePanel()
+end
