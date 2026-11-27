@@ -1,6 +1,6 @@
 # Audit and get-well plan
 
-Written 2026-11-26 against commit `793f120` (released as v2.5), client `_forever_` (Interface 16001). The result is version 2.6.0.
+Written 2026-11-26 against commit `793f120`, the unreleased tip of `fix/wow-forever-16001-compatibility`, on client `_forever_` (Interface 16001). The last release was v2.5. The result is version 2.6.0.
 
 ## Result
 
@@ -66,7 +66,7 @@ Left alone on purpose:
 ## Verification
 
 - In game, by reload and screenshot: the startup fix, the bar at its saved size, the new settings panel with the burst slider.
-- Offline: a 41-check script that loads the four files against a mocked WoW API. It covers startup on a client missing the event, the 2.5 settings carrying over, the pop and burst size, casts, resets, items, bags and the settings panel. Run against v2.5 it fails with the error from the client log. It only proves the addon's own logic; it cannot show how a real client behaves.
+- Offline: a 41-check script that loads the four files against a mocked WoW API. It covers startup on a client missing the event, the 2.5 settings carrying over, the pop and burst size, casts, resets, items, bags and the settings panel. An earlier version of the script, run against `793f120`, failed with the error from the client log. It only proves the addon's own logic; it cannot show how a real client behaves.
 - Not verified: any client other than `_forever_`.
 
 ## Ideas raised, not tried
@@ -80,6 +80,6 @@ Left alone on purpose:
 
 ## Rollback
 
-`git checkout v2.5 -- .` restores the last release (with finding 1). The saved variables keep the 2.5 layout alongside the new keys, so 2.5 still finds its settings.
+`git checkout 793f120 -- .` restores the code as it was before this work (with finding 1). The saved variables keep their old layout alongside the new keys, so older code still finds its settings.
 
 Local snapshots from this work: `refs/backup/pre-audit` (before any change), `refs/backup/startup-fix` (one-line fix only), `refs/backup/stage-1` (dead files removed, pop fix, burst setting; seen working in game).
