@@ -28,10 +28,11 @@ Open with `/lct` or the minimap button.
 
 ## Installation
 1. Download the latest release
-2. Extract the LoremCooldownTracker folder to your `World of Warcraft\_classic_\Interface\AddOns` directory
+2. Extract the LoremCooldownTracker folder to the `Interface\AddOns` directory of your game version, for example `World of Warcraft\_classic_\Interface\AddOns`
 3. Restart World of Warcraft if it's running
 
 ## Supported Versions
+- WoW Forever (1.60.x)
 - WoW Classic Era (1.15.x)
 - Burning Crusade Classic (2.5.x)
 - Wrath of the Lich King Classic (3.4.x)
